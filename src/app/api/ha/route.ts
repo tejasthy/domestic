@@ -43,8 +43,9 @@ export async function GET(request: NextRequest) {
   const hasMoney = data.modules.includes('expenses');
 
   const byId = new Map(data.members.map((m) => [m.id, m]));
-  const overdue = data.upNext.filter((t) => bucketFor(t.due_at) === 'overdue');
-  const today = data.upNext.filter((t) => bucketFor(t.due_at) === 'today');
+  const tz = data.household.timezone;
+  const overdue = data.upNext.filter((t) => bucketFor(t.due_at, tz) === 'overdue');
+  const today = data.upNext.filter((t) => bucketFor(t.due_at, tz) === 'today');
 
   return NextResponse.json({
     household: data.household.name,
@@ -66,7 +67,7 @@ export async function GET(request: NextRequest) {
       assignee: t.assignee.full_name,
       assignee_initials: t.assignee.initials,
       due_at: t.due_at,
-      state: bucketFor(t.due_at),
+      state: bucketFor(t.due_at, tz),
     })),
 
     people: data.members.map((m) => ({

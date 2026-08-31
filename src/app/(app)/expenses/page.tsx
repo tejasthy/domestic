@@ -3,6 +3,7 @@ import { getExpenses, getBalances, getSettlements, requireModule } from '@/lib/d
 import { Card, SectionHeader, Initials, LinkButton, EmptyState, Pill } from '@/components/ui';
 import { Icon } from '@/components/brand';
 import { formatCents, simplifyDebts } from '@/lib/money';
+import { formatCalendarDate } from '@/lib/timezone';
 import { SettleUpButton } from './settle-up';
 
 export const dynamic = 'force-dynamic';
@@ -157,10 +158,7 @@ export default async function ExpensesPage() {
                     <p className="t-body-sm text-ink-muted">
                       {iPaid ? 'You' : e.payer.full_name.split(' ')[0]} paid{' '}
                       {formatCents(e.amount_cents)} ·{' '}
-                      {new Date(e.spent_on + 'T12:00:00').toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                      })}
+                      {formatCalendarDate(e.spent_on, { month: 'short', day: 'numeric' })}
                     </p>
                   </div>
                   <div className="text-right shrink-0">
@@ -238,10 +236,7 @@ export default async function ExpensesPage() {
                     {formatCents(s.amount_cents)}
                   </span>
                   <span className="t-body-sm text-ink-muted w-14 text-right">
-                    {new Date(s.settled_on + 'T12:00:00').toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    })}
+                    {formatCalendarDate(s.settled_on, { month: 'short', day: 'numeric' })}
                   </span>
                 </div>
               );

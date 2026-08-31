@@ -62,24 +62,32 @@ describe('describeCadence', () => {
 });
 
 describe('bucketFor', () => {
-  const now = new Date('2026-08-30T15:00:00');
+  // Fixed UTC instants + an explicit non-UTC zone, so the test doesn't depend
+  // on the host machine's local timezone the way Date-local math would.
+  const tz = 'America/Detroit';
+  const now = new Date('2026-08-30T19:00:00Z'); // 3pm Eastern
 
   it('treats a null due date as anytime', () => {
-    expect(bucketFor(null, now)).toBe('anytime');
+    expect(bucketFor(null, tz, now)).toBe('anytime');
   });
 
   it('flags yesterday as overdue', () => {
-    expect(bucketFor(new Date('2026-08-29T20:00:00').toISOString(), now)).toBe('overdue');
+    expect(bucketFor('2026-08-30T00:30:00Z', tz, now)).toBe('overdue'); // 8/29 8:30pm Eastern
   });
 
   it('buckets later today, tomorrow, and beyond', () => {
-    expect(bucketFor(new Date('2026-08-30T20:00:00').toISOString(), now)).toBe('today');
-    expect(bucketFor(new Date('2026-08-31T20:00:00').toISOString(), now)).toBe('tomorrow');
-    expect(bucketFor(new Date('2026-09-04T20:00:00').toISOString(), now)).toBe('upcoming');
+    expect(bucketFor('2026-08-31T00:00:00Z', tz, now)).toBe('today'); // 8/30 8pm Eastern
+    expect(bucketFor('2026-09-01T00:00:00Z', tz, now)).toBe('tomorrow'); // 8/31 8pm Eastern
+    expect(bucketFor('2026-09-05T00:00:00Z', tz, now)).toBe('upcoming'); // 9/4 8pm Eastern
   });
 
   it('counts earlier today as today, not overdue', () => {
-    // 8am today with a 3pm "now" — late, but it is still your day to do it.
-    expect(bucketFor(new Date('2026-08-30T08:00:00').toISOString(), now)).toBe('today');
+    // 8am Eastern with a 3pm Eastern "now" — late, but it is still your day to do it.
+    expect(bucketFor('2026-08-30T12:00:00Z', tz, now)).toBe('today');
+  });
+
+  it('respects the household timezone at the boundary', () => {
+    // 11pm Eastern on 8/30 is already 8/31 in UTC — still "today" in Detroit.
+    expect(bucketFor('2026-08-31T03:00:00Z', tz, now)).toBe('today');
   });
 });

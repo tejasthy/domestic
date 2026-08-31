@@ -3,6 +3,7 @@ import { getRecurringExpenses, requireModule } from '@/lib/data';
 import { Card, EmptyState, LinkButton, Pill } from '@/components/ui';
 import { Icon } from '@/components/brand';
 import { formatCents } from '@/lib/money';
+import { formatCalendarDate } from '@/lib/timezone';
 import type { RecurringExpense } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -73,10 +74,7 @@ export default async function RecurringExpensesPage() {
         <Card className="divide-y divide-[var(--border-subtle)]">
           {recurring.map((re) => {
             const payer = byId.get(re.paid_by);
-            const nextDate = new Date(re.next_run_on + 'T12:00:00').toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-            });
+            const nextDate = formatCalendarDate(re.next_run_on, { month: 'short', day: 'numeric' });
             return (
               <div key={re.id} className="flex items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getSession, getChoreStats, getChores } from '@/lib/data';
+import { getSession, getChoreStats, getChores, hasPushSubscription } from '@/lib/data';
 import { Card, SectionHeader, Initials, Button } from '@/components/ui';
 import { signOut } from '@/lib/actions';
 import { PushToggle } from './push-toggle';
@@ -12,7 +12,11 @@ export default async function SettingsPage() {
   if (!session?.me || !session.household) return null;
   const { me, household, members, modules } = session;
 
-  const [chores, stats] = await Promise.all([getChores(), getChoreStats()]);
+  const [chores, stats, subscribed] = await Promise.all([
+    getChores(),
+    getChoreStats(),
+    hasPushSubscription(me.id),
+  ]);
   const myTotal = stats
     .filter((s) => s.profile_id === me.id)
     .reduce((acc, s) => acc + s.done_count, 0);
@@ -33,7 +37,7 @@ export default async function SettingsPage() {
       <section>
         <SectionHeader title="Notifications" />
         <PushToggle
-          enabled={me.notify_push}
+          enabled={subscribed && me.notify_push}
           vapidKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ''}
           quietFrom={me.quiet_from}
           quietTo={me.quiet_to}

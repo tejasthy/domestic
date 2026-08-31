@@ -95,6 +95,7 @@ export default async function HouseholdSettingsPage() {
           <div className="mt-3">
             <InviteList
               householdName={household.name}
+              timeZone={household.timezone}
               invites={openInvites.map((i) => ({
                 id: i.id,
                 code: i.code,
@@ -129,7 +130,7 @@ export default async function HouseholdSettingsPage() {
 
       <section>
         <SectionHeader title="Receipt scanning" />
-        <AiConfig summary={aiConfig} />
+        <AiConfig summary={aiConfig} timeZone={household.timezone} />
       </section>
 
       {modules.includes('kiosk') && (
@@ -138,6 +139,7 @@ export default async function HouseholdSettingsPage() {
           <div className="space-y-3">
             <LocationSetting label={household.location_label} />
             <KioskDevices
+              timeZone={household.timezone}
               devices={kiosks.map((k) => ({
                 id: k.id,
                 name: k.name,

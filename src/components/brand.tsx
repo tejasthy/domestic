@@ -119,4 +119,9 @@ export const Icon = {
       <path d="M12 7.5V12l3 2" />
     </svg>
   ),
+  Close: ({ size = 24, className }: IconProps) => (
+    <svg {...base(size, className)}>
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  ),
 };

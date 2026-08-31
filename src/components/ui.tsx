@@ -5,6 +5,22 @@ export function cx(...parts: (string | false | null | undefined)[]) {
   return parts.filter(Boolean).join(' ');
 }
 
+/**
+ * Tailwind's generated stylesheet orders utilities by its own scale, not by
+ * class-attribute order — so `w-full` always wins over a later `w-24` in the
+ * same class list. Strip base classes whose prefix (w-/h-/etc.) is also
+ * overridden, so callers can actually resize a shared component.
+ */
+function cxOverride(base: string, override: string | undefined, prefixes: string[]) {
+  if (!override) return base;
+  const overridden = prefixes.filter((p) => override.split(/\s+/).some((c) => c.startsWith(p)));
+  const filteredBase = base
+    .split(/\s+/)
+    .filter((c) => !overridden.some((p) => c.startsWith(p)))
+    .join(' ');
+  return cx(filteredBase, override);
+}
+
 /* ------------------------------------------------------------------ surface */
 
 export function Card({
@@ -227,9 +243,11 @@ export const inputClass = cx(
 );
 
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={cx(inputClass, props.className)} />;
+  const base = cxOverride(inputClass, props.className, ['w-', 'h-']);
+  return <input {...props} className={cx(base, props.className)} />;
 }
 
 export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={cx(inputClass, 'pr-8', props.className)} />;
+  const base = cxOverride(cx(inputClass, 'pr-8'), props.className, ['w-', 'h-']);
+  return <select {...props} className={cx(base, props.className)} />;
 }

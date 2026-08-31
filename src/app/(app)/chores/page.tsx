@@ -4,13 +4,14 @@ import { getChores, getUpNext, getChoreStats, getRecentlyDone, requireModule } f
 import { TurnRow } from '@/components/turn-card';
 import { Card, SectionHeader, Initials, Pill, cx } from '@/components/ui';
 import { describeCadence, upcomingRotation } from '@/lib/rotation';
+import { formatInTimeZone } from '@/lib/timezone';
 import type { Profile } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ChoresPage() {
   const session = await requireModule('chores');
-  const { me, members } = session;
+  const { me, members, household } = session;
 
   const supabase = await createClient();
   const [chores, upNext, stats, recent, { data: rotations }] = await Promise.all([
@@ -108,6 +109,7 @@ export default async function ChoresPage() {
                   <TurnRow
                     turn={turn}
                     mine={turn.assignee_id === me.id}
+                    timeZone={household.timezone}
                     className="border-0 shadow-none bg-transparent p-0"
                   />
                 </div>
@@ -154,7 +156,7 @@ export default async function ChoresPage() {
                 />
                 <span className="t-body-sm text-ink-muted tabular-nums w-14 text-right">
                   {t.completed_at
-                    ? new Date(t.completed_at).toLocaleDateString('en-US', {
+                    ? formatInTimeZone(t.completed_at, household.timezone, {
                         month: 'short',
                         day: 'numeric',
                       })

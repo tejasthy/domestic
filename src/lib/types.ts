@@ -492,6 +492,10 @@ export type Database = {
         Args: { p_household: string; p_chore: string; p_profile: string; p_active: boolean };
         Returns: undefined;
       };
+      kiosk_dismiss_message: {
+        Args: { p_household: string; p_message: string; p_profile: string };
+        Returns: undefined;
+      };
     };
     Enums: {
       chore_cadence: ChoreCadence;

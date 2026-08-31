@@ -92,3 +92,18 @@ export async function kioskSetChoreActive(
   revalidatePath('/kiosk');
   return { ok: true };
 }
+
+export async function kioskDismissMessage(messageId: string, profileId: string): Promise<ActionResult> {
+  const ctx = await kioskAdmin();
+  if (!ctx.ok) return ctx;
+
+  const { error } = await ctx.admin.rpc('kiosk_dismiss_message', {
+    p_household: ctx.householdId,
+    p_message: messageId,
+    p_profile: profileId,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/kiosk');
+  return { ok: true };
+}

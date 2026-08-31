@@ -3,7 +3,8 @@ import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import type {
   ActivityEntry, Balance, Chore, Expense, ExpenseSplit, ExpenseItem, ExpenseItemSplit,
-  HouseholdInvite, Profile, RecurringExpense, RecurringExpenseParticipant, Settlement, TurnCard,
+  Household, HouseholdInvite, KioskMessage, Profile, RecurringExpense, RecurringExpenseParticipant,
+  Settlement, TurnCard,
 } from '@/lib/types';
 import { DEFAULT_MODULES, type ModuleKey } from '@/lib/modules';
 
@@ -118,6 +119,18 @@ export async function getRecentlyDone(limit = 20): Promise<TurnCard[]> {
   return data ?? [];
 }
 
+/** Notes currently live on the wall display, newest first. */
+export async function getKioskMessages(): Promise<KioskMessage[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('kiosk_messages')
+    .select('*')
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .returns<KioskMessage[]>();
+  return data ?? [];
+}
+
 export async function getActivity(limit = 30): Promise<ActivityEntry[]> {
   const supabase = await createClient();
   const { data } = await supabase
@@ -210,6 +223,17 @@ export async function getChoreStats() {
   return data ?? [];
 }
 
+/** Whether this profile has ever completed a real push subscription — distinct
+ * from notify_push, which is just the pause/resume preference. */
+export async function hasPushSubscription(profileId: string): Promise<boolean> {
+  const supabase = await createClient();
+  const { count } = await supabase
+    .from('push_subscriptions')
+    .select('id', { count: 'exact', head: true })
+    .eq('profile_id', profileId);
+  return (count ?? 0) > 0;
+}
+
 /* ------------------------------------------------------------ household admin */
 
 export async function getInvites(): Promise<HouseholdInvite[]> {
@@ -241,5 +265,7 @@ export async function requireModule(key: ModuleKey) {
   const session = await getSession();
   if (!session?.me || !session.household) redirect('/');
   if (!session.modules.includes(key)) notFound();
-  return session;
+  // The guard above already guarantees this at runtime; redirect()'s `never`
+  // return type doesn't propagate narrowing through getSession's wider union.
+  return session as typeof session & { me: Profile; household: Household };
 }
