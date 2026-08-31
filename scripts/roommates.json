@@ -1,0 +1,33 @@
+{
+  "household": {
+    "name": "526 Detroit St.",
+    "address": "123 Main St., Ann Arbor, MI",
+    "timezone": "America/Detroit"
+  },
+  "roommates": [
+    {
+      "full_name": "Toni Tran",
+      "initials": "TT",
+      "color": "#00B2A9",
+      "email": "toni.tran@example.com"
+    },
+    {
+      "full_name": "Avery Blake",
+      "initials": "AB",
+      "color": "#2F65A7",
+      "email": "avery.blake@example.com"
+    },
+    {
+      "full_name": "Bailey King",
+      "initials": "BK",
+      "color": "#702082",
+      "email": "bailey.king@example.com"
+    },
+    {
+      "full_name": "Nadia Ahmed",
+      "initials": "NA",
+      "color": "#9A3324",
+      "email": "nadia.ahmed@example.com"
+    }
+  ]
+}

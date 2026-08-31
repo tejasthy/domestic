@@ -1,26 +1,224 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ---------------------------------------------------------------------------
+   Domestic — design tokens.
+   Ported from the U-M / Modernist design system: Maize + Blue signature
+   colors, IBM Plex for text, Oswald for display, a cool gray scale tied to
+   blue's hue, and the same radius / shadow / motion ramps.
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* Primary — signature colors */
+  --color-maize: #ffcb05;
+  --color-blue: #00274c;
+
+  /* Secondary — supporting palette. Roommate colors come from here. */
+  --color-tappan-red: #9a3324;
+  --color-ross-orange: #d86018;
+  --color-rackham-green: #75988d;
+  --color-wavefield-green: #a5a508;
+  --color-taubman-teal: #00b2a9;
+  --color-arboretum-blue: #2f65a7;
+  --color-amethyst: #702082;
+  --color-matthaei-violet: #575294;
+  --color-peony-pink: #e01f7c;
+  --color-tan: #cfc096;
+  --color-beige: #9b9a6d;
+  --color-ash: #989c97;
+  --color-stone: #655a52;
+  --color-puma-black: #131516;
+
+  /* Neutral scale — cool gray tied to blue's hue */
+  --color-gray-0: #ffffff;
+  --color-gray-50: oklch(98.2% 0.003 250);
+  --color-gray-100: oklch(96% 0.004 250);
+  --color-gray-200: oklch(92% 0.006 250);
+  --color-gray-300: oklch(85% 0.008 250);
+  --color-gray-400: oklch(72% 0.012 250);
+  --color-gray-500: oklch(58% 0.015 250);
+  --color-gray-600: oklch(46% 0.018 250);
+  --color-gray-700: oklch(36% 0.02 250);
+  --color-gray-800: oklch(26% 0.03 252);
+  --color-gray-900: oklch(17% 0.035 254);
+
+  /* Type */
+  --font-display: var(--font-oswald), "Arial Narrow", sans-serif;
+  --font-body: var(--font-plex-sans), -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: var(--font-plex-mono), "SF Mono", monospace;
+
+  /* Effects */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  --shadow-xs: 0 1px 2px rgba(0, 20, 40, 0.06);
+  --shadow-sm: 0 1px 3px rgba(0, 20, 40, 0.08), 0 1px 2px rgba(0, 20, 40, 0.05);
+  --shadow-md: 0 4px 10px rgba(0, 20, 40, 0.1), 0 1px 3px rgba(0, 20, 40, 0.06);
+  --shadow-lg: 0 12px 28px rgba(0, 20, 40, 0.16), 0 2px 6px rgba(0, 20, 40, 0.08);
+
+  --ease-fast: 120ms ease;
+  --ease-base: 180ms ease;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Semantic layer. Every surface/text/border color in the app resolves through
+   these, so the dark theme is a single block of overrides. */
+:root {
+  --surface-page: var(--color-gray-50);
+  --surface-card: var(--color-gray-0);
+  --surface-sunken: var(--color-gray-100);
+  --surface-inverse: var(--color-blue);
+  --surface-hover: var(--color-gray-100);
+
+  --border-subtle: var(--color-gray-200);
+  --border-default: var(--color-gray-300);
+  --border-strong: var(--color-gray-400);
+
+  --ink-primary: var(--color-gray-900);
+  --ink-secondary: var(--color-gray-600);
+  --ink-muted: var(--color-gray-500);
+  --ink-inverse: var(--color-gray-0);
+  --ink-accent: var(--color-blue);
+
+  --state-success: #1b7f5a;
+  --state-warning: var(--color-ross-orange);
+  --state-danger: var(--color-tappan-red);
+  --state-info: var(--color-arboretum-blue);
+
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --surface-page: var(--color-gray-900);
+    --surface-card: var(--color-gray-800);
+    --surface-sunken: oklch(21% 0.032 253);
+    --surface-inverse: var(--color-maize);
+    --surface-hover: var(--color-gray-700);
+
+    --border-subtle: var(--color-gray-700);
+    --border-default: var(--color-gray-600);
+    --border-strong: var(--color-gray-500);
+
+    --ink-primary: var(--color-gray-50);
+    --ink-secondary: var(--color-gray-300);
+    --ink-muted: var(--color-gray-400);
+    --ink-inverse: var(--color-blue);
+    --ink-accent: var(--color-maize);
+
+    --state-success: #3fbf90;
+    --state-warning: #f08a3c;
+    --state-danger: #e06a58;
+    --state-info: #6fa0e0;
+
+    color-scheme: dark;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+:root[data-theme="dark"] {
+  --surface-page: var(--color-gray-900);
+  --surface-card: var(--color-gray-800);
+  --surface-sunken: oklch(21% 0.032 253);
+  --surface-inverse: var(--color-maize);
+  --surface-hover: var(--color-gray-700);
+
+  --border-subtle: var(--color-gray-700);
+  --border-default: var(--color-gray-600);
+  --border-strong: var(--color-gray-500);
+
+  --ink-primary: var(--color-gray-50);
+  --ink-secondary: var(--color-gray-300);
+  --ink-muted: var(--color-gray-400);
+  --ink-inverse: var(--color-blue);
+  --ink-accent: var(--color-maize);
+
+  --state-success: #3fbf90;
+  --state-warning: #f08a3c;
+  --state-danger: #e06a58;
+  --state-info: #6fa0e0;
+
+  color-scheme: dark;
+}
+
+/* Expose the semantic layer to Tailwind utilities (bg-card, text-ink, ...) */
+@theme inline {
+  --color-page: var(--surface-page);
+  --color-card: var(--surface-card);
+  --color-sunken: var(--surface-sunken);
+  --color-inverse: var(--surface-inverse);
+  --color-hover: var(--surface-hover);
+
+  --color-subtle: var(--border-subtle);
+  --color-line: var(--border-default);
+  --color-line-strong: var(--border-strong);
+
+  --color-ink: var(--ink-primary);
+  --color-ink-2: var(--ink-secondary);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-inverse: var(--ink-inverse);
+  --color-accent: var(--ink-accent);
+
+  --color-success: var(--state-success);
+  --color-warning: var(--state-warning);
+  --color-danger: var(--state-danger);
+  --color-info: var(--state-info);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background: var(--surface-page);
+    color: var(--ink-primary);
+    font: 400 16px/1.5 var(--font-body);
+    /* Kiosk + phone: never let the page rubber-band horizontally. */
+    overflow-x: hidden;
+  }
+
+  /* Safe-area padding so the tab bar clears the iPhone home indicator. */
+  .pb-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  .pt-safe { padding-top: max(0.75rem, env(safe-area-inset-top)); }
+
+  ::selection { background: var(--color-maize); color: var(--color-blue); }
+
+  :focus-visible {
+    outline: 2px solid var(--color-arboretum-blue);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+}
+
+@layer components {
+  /* The type ramp, straight from tokens/typography.css. */
+  .t-display-xl { font: 700 40px/1.15 var(--font-display); letter-spacing: -0.01em; }
+  .t-display-lg { font: 600 30px/1.2 var(--font-display); }
+  .t-title-lg   { font: 600 22px/1.3 var(--font-body); }
+  .t-title-md   { font: 600 18px/1.35 var(--font-body); }
+  .t-body-lg    { font: 400 16px/1.5 var(--font-body); }
+  .t-body-md    { font: 400 14px/1.5 var(--font-body); }
+  .t-body-sm    { font: 400 13px/1.45 var(--font-body); }
+  .t-caption    { font: 500 12px/1.4 var(--font-body); }
+  .t-label      { font: 600 12px/1.3 var(--font-body); letter-spacing: 0.06em; text-transform: uppercase; }
+  .t-code       { font: 500 13px/1.4 var(--font-mono); }
+  .t-code-lg    { font: 600 20px/1.3 var(--font-mono); }
+
+  /* Kiosk runs at arm's length — scale the ramp up rather than re-specifying. */
+  .kiosk { font-size: 18px; }
+  .kiosk .t-display-xl { font-size: 64px; }
+  .kiosk .t-display-lg { font-size: 44px; }
+  .kiosk .t-title-lg   { font-size: 30px; }
+  .kiosk .t-title-md   { font-size: 24px; }
+  .kiosk .t-body-lg    { font-size: 20px; }
+  .kiosk .t-body-md    { font-size: 18px; }
+  .kiosk .t-label      { font-size: 15px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
