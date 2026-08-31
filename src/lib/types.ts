@@ -3,7 +3,10 @@
 
 export type ChoreCadence = 'scheduled' | 'on_demand';
 export type TurnStatus = 'pending' | 'done' | 'skipped' | 'missed';
-export type SplitKind = 'equal' | 'exact' | 'shares' | 'percent';
+export type SplitKind = 'equal' | 'exact' | 'shares' | 'percent' | 'adjustment';
+/** expenses.split_kind only — means "derive the split from expense_items". */
+export type ExpenseSplitKind = SplitKind | 'itemized';
+export type ExpenseItemKind = 'item' | 'tax' | 'tip' | 'discount' | 'fee';
 export type SwapStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
 export type RecurringCadence = 'weekly' | 'monthly';
 export type AiProvider = 'anthropic' | 'gemini';
@@ -91,7 +94,7 @@ export type Expense = {
   category: string;
   paid_by: string;
   spent_on: string;
-  split_kind: SplitKind;
+  split_kind: ExpenseSplitKind;
   receipt_url: string | null;
   note: string | null;
   created_by: string | null;
@@ -102,6 +105,24 @@ export type Expense = {
 
 export type ExpenseSplit = {
   expense_id: string;
+  profile_id: string;
+  owed_cents: number;
+  weight: number | null;
+};
+
+export type ExpenseItem = {
+  id: string;
+  expense_id: string;
+  name: string;
+  amount_cents: number;
+  kind: ExpenseItemKind;
+  split_kind: SplitKind;
+  position: number;
+  created_at: string;
+};
+
+export type ExpenseItemSplit = {
+  expense_item_id: string;
   profile_id: string;
   owed_cents: number;
   weight: number | null;
@@ -260,6 +281,8 @@ export type Database = {
       chore_swaps: Table<ChoreSwap>;
       expenses: Table<Expense>;
       expense_splits: Table<ExpenseSplit>;
+      expense_items: Table<ExpenseItem>;
+      expense_item_splits: Table<ExpenseItemSplit>;
       recurring_expenses: Table<RecurringExpense>;
       recurring_expense_participants: Table<RecurringExpenseParticipant>;
       settlements: Table<Settlement>;
@@ -402,6 +425,25 @@ export type Database = {
         };
         Returns: RecurringExpense;
       };
+      create_itemized_expense: {
+        Args: {
+          p_description: string;
+          p_paid_by: string;
+          p_spent_on: string;
+          p_items: {
+            name: string;
+            amount_cents: number;
+            kind: ExpenseItemKind;
+            split_kind: SplitKind;
+            position?: number;
+            splits: { profile_id: string; owed_cents: number; weight: number | null }[];
+          }[];
+          p_category?: string;
+          p_receipt_url?: string | null;
+          p_note?: string | null;
+        };
+        Returns: Expense;
+      };
       set_recurring_expense_active: { Args: { p_id: string; p_active: boolean }; Returns: undefined };
       post_due_recurring_expenses: { Args: Record<PropertyKey, never>; Returns: Expense[] };
       set_ai_config: { Args: { p_provider: AiProvider; p_api_key: string; p_secret: string }; Returns: undefined };
@@ -418,7 +460,7 @@ export type Database = {
     Enums: {
       chore_cadence: ChoreCadence;
       turn_status: TurnStatus;
-      split_kind: SplitKind;
+      split_kind: ExpenseSplitKind;
     };
     CompositeTypes: Record<never, never>;
   };

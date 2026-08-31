@@ -2,8 +2,8 @@ import { cache } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import type {
-  ActivityEntry, Balance, Chore, Expense, ExpenseSplit, HouseholdInvite,
-  Profile, RecurringExpense, RecurringExpenseParticipant, Settlement, TurnCard,
+  ActivityEntry, Balance, Chore, Expense, ExpenseSplit, ExpenseItem, ExpenseItemSplit,
+  HouseholdInvite, Profile, RecurringExpense, RecurringExpenseParticipant, Settlement, TurnCard,
 } from '@/lib/types';
 import { DEFAULT_MODULES, type ModuleKey } from '@/lib/modules';
 
@@ -134,6 +134,7 @@ export async function getActivity(limit = 30): Promise<ActivityEntry[]> {
 export type ExpenseWithSplits = Expense & {
   splits: ExpenseSplit[];
   payer: Pick<Profile, 'id' | 'full_name' | 'initials' | 'color'>;
+  items: (ExpenseItem & { item_splits: ExpenseItemSplit[] })[];
 };
 
 export async function getExpenses(limit = 50): Promise<ExpenseWithSplits[]> {
@@ -143,11 +144,16 @@ export async function getExpenses(limit = 50): Promise<ExpenseWithSplits[]> {
     .select(`
       *,
       splits:expense_splits ( expense_id, profile_id, owed_cents, weight ),
-      payer:profiles!expenses_paid_by_fkey ( id, full_name, initials, color )
+      payer:profiles!expenses_paid_by_fkey ( id, full_name, initials, color ),
+      items:expense_items (
+        id, expense_id, name, amount_cents, kind, split_kind, position, created_at,
+        item_splits:expense_item_splits ( expense_item_id, profile_id, owed_cents, weight )
+      )
     `)
     .is('deleted_at', null)
     .order('spent_on', { ascending: false })
     .order('created_at', { ascending: false })
+    .order('position', { referencedTable: 'expense_items' })
     .limit(limit)
     .returns<ExpenseWithSplits[]>();
   return data ?? [];

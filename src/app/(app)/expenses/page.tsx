@@ -143,8 +143,10 @@ export default async function ExpensesPage() {
             {expenses.map((e) => {
               const myShare = e.splits.find((s) => s.profile_id === me.id)?.owed_cents ?? 0;
               const iPaid = e.paid_by === me.id;
-              return (
-                <div key={e.id} className="flex items-center gap-3 px-4 py-3">
+              const itemCount = e.items.length;
+
+              const summary = (
+                <div className="flex items-center gap-3 px-4 py-3">
                   <Initials
                     initials={e.payer.initials}
                     color={e.payer.color}
@@ -173,9 +175,47 @@ export default async function ExpensesPage() {
                           ? `−${formatCents(myShare)}`
                           : '—'}
                     </p>
-                    {e.receipt_url && <Pill tone="neutral">receipt</Pill>}
+                    <div className="flex items-center gap-1 justify-end mt-0.5">
+                      {itemCount > 0 && (
+                        <Pill tone="accent">{itemCount} item{itemCount === 1 ? '' : 's'}</Pill>
+                      )}
+                      {e.receipt_url && <Pill tone="neutral">receipt</Pill>}
+                    </div>
                   </div>
                 </div>
+              );
+
+              if (itemCount === 0) {
+                return <div key={e.id}>{summary}</div>;
+              }
+
+              return (
+                <details key={e.id}>
+                  <summary className="cursor-pointer [&::-webkit-details-marker]:hidden marker:hidden">
+                    {summary}
+                  </summary>
+                  <div className="px-4 pb-3 pl-[4.25rem] -mt-1 space-y-1.5">
+                    {e.items.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-3">
+                        <span className="t-body-sm text-ink-muted truncate">
+                          {item.name}
+                          {item.kind !== 'item' && ` · ${item.kind}`}
+                        </span>
+                        <span className="t-body-sm text-ink-2 tabular-nums shrink-0 text-right">
+                          {formatCents(item.amount_cents)}
+                          {' — '}
+                          {item.item_splits
+                            .map((s) => {
+                              const p = byId.get(s.profile_id);
+                              const who = p ? (p.id === me.id ? 'You' : p.full_name.split(' ')[0]) : '?';
+                              return `${who} ${formatCents(s.owed_cents)}`;
+                            })
+                            .join(', ')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
               );
             })}
           </Card>
