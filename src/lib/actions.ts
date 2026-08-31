@@ -2,12 +2,30 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { notifyProfiles } from '@/lib/push';
 import { splitEqual, splitByWeight, splitByAdjustment, parseDollars } from '@/lib/money';
+import { THEME_COOKIE, type ThemeMode } from '@/lib/theme';
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
+
+/* ------------------------------------------------------------------ theme */
+
+/**
+ * Per-device, not per-account: a household shares logins across a phone, a
+ * laptop, and an unauthenticated kiosk tablet, so this rides a plain cookie
+ * rather than `profiles` — no session required, and each screen keeps its
+ * own preference.
+ */
+export async function setTheme(theme: ThemeMode): Promise<ActionResult> {
+  const store = await cookies();
+  if (theme === 'system') store.delete(THEME_COOKIE);
+  else store.set(THEME_COOKIE, theme, { maxAge: 60 * 60 * 24 * 365, path: '/', sameSite: 'lax' });
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
 
 /* ------------------------------------------------------------------- auth */
 

@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* Tailwind's default `dark:` variant only looks at prefers-color-scheme, which
+   would ignore an explicit data-theme override below. Redefine it to match
+   the same two cases the semantic layer overrides on. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
 /* ---------------------------------------------------------------------------
    Domestic — design tokens.
    Ported from the U-M / Modernist design system: Maize + Blue signature

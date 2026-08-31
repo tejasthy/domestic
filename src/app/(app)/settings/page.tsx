@@ -1,9 +1,12 @@
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { getSession, getChoreStats, getChores, hasPushSubscription } from '@/lib/data';
 import { Card, SectionHeader, Initials, Button } from '@/components/ui';
 import { signOut } from '@/lib/actions';
 import { PushToggle } from './push-toggle';
 import { ReplayIntro } from '@/components/intro';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { THEME_COOKIE, parseThemeCookie } from '@/lib/theme';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +14,7 @@ export default async function SettingsPage() {
   const session = await getSession();
   if (!session?.me || !session.household) return null;
   const { me, household, members, modules } = session;
+  const theme = parseThemeCookie((await cookies()).get(THEME_COOKIE)?.value);
 
   const [chores, stats, subscribed] = await Promise.all([
     getChores(),
@@ -33,6 +37,17 @@ export default async function SettingsPage() {
           </p>
         </div>
       </header>
+
+      <section>
+        <SectionHeader title="Appearance" />
+        <Card className="p-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="t-title-md text-ink">Theme</p>
+            <p className="t-body-sm text-ink-muted mt-0.5">This device only.</p>
+          </div>
+          <ThemeToggle current={theme} />
+        </Card>
+      </section>
 
       <section>
         <SectionHeader title="Notifications" />
