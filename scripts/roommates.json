@@ -1,0 +1,33 @@
+{
+  "household": {
+    "name": "526 Detroit St.",
+    "address": "526 Detroit St., Ann Arbor, MI",
+    "timezone": "America/Detroit"
+  },
+  "roommates": [
+    {
+      "full_name": "Tejas Thiyagarajan",
+      "initials": "TT",
+      "color": "#00B2A9",
+      "email": "tejas.thiyagarajan@gmail.com"
+    },
+    {
+      "full_name": "Aiden Brooks",
+      "initials": "AB",
+      "color": "#2F65A7",
+      "email": "aidenabrooks@gmail.com"
+    },
+    {
+      "full_name": "Brandon Kauten",
+      "initials": "BK",
+      "color": "#702082",
+      "email": "bkauten05@gmail.com"
+    },
+    {
+      "full_name": "Nolen Armstrong",
+      "initials": "NA",
+      "color": "#9A3324",
+      "email": "ndarms@umich.edu"
+    }
+  ]
+}
