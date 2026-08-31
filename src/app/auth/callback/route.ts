@@ -1,17 +1,48 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-/** Magic-link landing. Exchanges the code for a session cookie, then bounces. */
+/**
+ * Landing point for both magic links and OAuth.
+ *
+ * Every failure used to collapse into "link expired", which is wrong for most
+ * of them and actively misleading when the real cause is a provider or project
+ * setting. Pass the actual reason through instead.
+ */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
-  const code = searchParams.get('code');
   const next = searchParams.get('next') ?? '/';
 
-  if (code) {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(`${origin}${next}`);
+  const fail = (reason: string, detail?: string | null) => {
+    const url = new URL('/login', origin);
+    url.searchParams.set('error', reason);
+    if (detail) url.searchParams.set('detail', detail.slice(0, 300));
+    return NextResponse.redirect(url);
+  };
+
+  // Supabase reports provider-side and project-side rejections here rather
+  // than by omitting `code` — e.g. signups disabled, or a redirect mismatch.
+  const providerError = searchParams.get('error') ?? searchParams.get('error_code');
+  if (providerError) {
+    const description = searchParams.get('error_description');
+    console.error('[auth] provider returned an error', providerError, description);
+
+    if (/signup.*disabled|disabled.*signup/i.test(`${providerError} ${description}`)) {
+      return fail('signups_disabled');
+    }
+    return fail('provider', description ?? providerError);
   }
 
-  return NextResponse.redirect(`${origin}/login?error=link_expired`);
+  const code = searchParams.get('code');
+  if (!code) return fail('no_code');
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+  if (error) {
+    console.error('[auth] code exchange failed', error.status, error.message);
+    if (/signup|not allowed/i.test(error.message)) return fail('signups_disabled');
+    return fail('exchange', error.message);
+  }
+
+  return NextResponse.redirect(`${origin}${next}`);
 }
