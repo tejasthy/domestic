@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { notifyProfiles } from '@/lib/push';
-import { splitEqual, splitByWeight, parseDollars } from '@/lib/money';
+import { splitEqual, splitByWeight, splitByAdjustment, parseDollars } from '@/lib/money';
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -167,17 +167,33 @@ export async function respondToSwap(swapId: string, accept: boolean): Promise<Ac
 
 /* ---------------------------------------------------------------- expenses */
 
+const ExpenseItemSplitInput = z.object({
+  profile_id: z.string().uuid(),
+  owed_cents: z.number().int(),
+  weight: z.number().nullable().default(null),
+});
+
+const ExpenseItemInput = z.object({
+  name: z.string().min(1).max(120),
+  amount_cents: z.number().int(),
+  kind: z.enum(['item', 'tax', 'tip', 'discount', 'fee']).default('item'),
+  split_kind: z.enum(['equal', 'exact', 'shares', 'percent', 'adjustment']).default('equal'),
+  splits: z.array(ExpenseItemSplitInput).min(1, 'Assign this to someone.'),
+});
+
 const ExpenseInput = z.object({
   description: z.string().min(1, 'Give it a name.').max(120),
-  amount: z.string(),
+  amount: z.string().optional(),
   paid_by: z.string().uuid(),
   spent_on: z.string(),
   category: z.string().default('general'),
-  split_kind: z.enum(['equal', 'exact', 'shares', 'percent']).default('equal'),
-  /** profile ids included in the split */
-  participants: z.array(z.string().uuid()).min(1, 'Split it with someone.'),
-  /** for exact/shares/percent: profile id -> raw value */
+  split_kind: z.enum(['equal', 'exact', 'shares', 'percent', 'adjustment']).default('equal'),
+  /** profile ids included in the split — required unless `items` is given */
+  participants: z.array(z.string().uuid()).optional(),
+  /** for exact/shares/percent/adjustment: profile id -> raw value */
   weights: z.record(z.string(), z.number()).optional(),
+  /** itemized receipt: line items (+ tax/tip/discount rows), each with its own assignees and split method */
+  items: z.array(ExpenseItemInput).optional(),
   note: z.string().max(500).optional(),
   receipt_url: z.string().url().optional(),
 });
@@ -191,11 +207,6 @@ export async function addExpense(input: ExpenseInputType): Promise<ActionResult>
   }
   const e = parsed.data;
 
-  const amountCents = parseDollars(e.amount);
-  if (!amountCents || amountCents <= 0) {
-    return { ok: false, error: 'Enter an amount greater than zero.' };
-  }
-
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: 'Not signed in.' };
@@ -205,87 +216,144 @@ export async function addExpense(input: ExpenseInputType): Promise<ActionResult>
     .single<{ household_id: string; full_name: string }>();
   if (!me?.household_id) return { ok: false, error: 'No household.' };
 
-  // Work out each person's share before writing anything, so a bad split
-  // never leaves a half-recorded expense behind.
+  let expenseId: string;
+  let amountCents: number;
   let owed: Record<string, number>;
-  if (e.split_kind === 'equal') {
-    owed = splitEqual(amountCents, e.participants);
-  } else if (e.split_kind === 'exact') {
-    owed = Object.fromEntries(
-      e.participants.map((id) => [id, Math.round((e.weights?.[id] ?? 0) * 100)]),
-    );
-    const sum = Object.values(owed).reduce((a, b) => a + b, 0);
-    if (sum !== amountCents) {
-      const diff = (amountCents - sum) / 100;
-      return {
-        ok: false,
-        error: `Exact splits must add up to the total — you're ${diff > 0 ? 'short' : 'over'} by $${Math.abs(diff).toFixed(2)}.`,
-      };
+
+  if (e.items && e.items.length > 0) {
+    // Same invariant create_itemized_expense enforces server-side — checked
+    // here too so a bad item comes back as a normal form error instead of a
+    // raw Postgres one.
+    for (const item of e.items) {
+      const sum = item.splits.reduce((a, s) => a + s.owed_cents, 0);
+      if (sum !== item.amount_cents) {
+        return { ok: false, error: `"${item.name}"'s splits must add up to its amount.` };
+      }
     }
+
+    const { data: expense, error } = await supabase.rpc('create_itemized_expense', {
+      p_description: e.description,
+      p_paid_by: e.paid_by,
+      p_spent_on: e.spent_on,
+      p_items: e.items,
+      p_category: e.category,
+      p_receipt_url: e.receipt_url ?? null,
+      p_note: e.note ?? null,
+    });
+    if (error || !expense) return { ok: false, error: error?.message ?? 'Could not save.' };
+
+    expenseId = expense.id;
+    amountCents = expense.amount_cents;
+
+    const { data: splits } = await supabase
+      .from('expense_splits')
+      .select('profile_id, owed_cents')
+      .eq('expense_id', expenseId);
+    owed = Object.fromEntries((splits ?? []).map((s) => [s.profile_id, s.owed_cents]));
   } else {
-    const weights = Object.fromEntries(
-      e.participants.map((id) => [id, e.weights?.[id] ?? 0]),
-    );
-    if (Object.values(weights).every((w) => w <= 0)) {
-      return { ok: false, error: 'Give at least one person a share.' };
+    amountCents = parseDollars(e.amount ?? '') ?? 0;
+    if (amountCents <= 0) return { ok: false, error: 'Enter an amount greater than zero.' };
+
+    const participants = e.participants ?? [];
+    if (participants.length === 0) return { ok: false, error: 'Split it with someone.' };
+
+    // Work out each person's share before writing anything, so a bad split
+    // never leaves a half-recorded expense behind.
+    if (e.split_kind === 'equal') {
+      owed = splitEqual(amountCents, participants);
+    } else if (e.split_kind === 'exact') {
+      owed = Object.fromEntries(
+        participants.map((id) => [id, Math.round((e.weights?.[id] ?? 0) * 100)]),
+      );
+      const sum = Object.values(owed).reduce((a, b) => a + b, 0);
+      if (sum !== amountCents) {
+        const diff = (amountCents - sum) / 100;
+        return {
+          ok: false,
+          error: `Exact splits must add up to the total — you're ${diff > 0 ? 'short' : 'over'} by $${Math.abs(diff).toFixed(2)}.`,
+        };
+      }
+    } else if (e.split_kind === 'adjustment') {
+      const adjustments = Object.fromEntries(
+        participants.map((id) => [id, Math.round((e.weights?.[id] ?? 0) * 100)]),
+      );
+      const sumAdj = Object.values(adjustments).reduce((a, b) => a + b, 0);
+      if (sumAdj > amountCents) {
+        return {
+          ok: false,
+          error: `Adjustments can't exceed the total — you're over by $${((sumAdj - amountCents) / 100).toFixed(2)}.`,
+        };
+      }
+      owed = splitByAdjustment(amountCents, participants, adjustments);
+      if (Object.values(owed).some((c) => c < 0)) {
+        return { ok: false, error: 'Someone would owe a negative amount — lower their adjustment.' };
+      }
+    } else {
+      const weights = Object.fromEntries(
+        participants.map((id) => [id, e.weights?.[id] ?? 0]),
+      );
+      if (Object.values(weights).every((w) => w <= 0)) {
+        return { ok: false, error: 'Give at least one person a share.' };
+      }
+      owed = splitByWeight(amountCents, weights);
     }
-    owed = splitByWeight(amountCents, weights);
-  }
 
-  const { data: expense, error } = await supabase
-    .from('expenses')
-    .insert({
+    const { data: expense, error } = await supabase
+      .from('expenses')
+      .insert({
+        household_id: me.household_id,
+        description: e.description,
+        amount_cents: amountCents,
+        category: e.category,
+        paid_by: e.paid_by,
+        spent_on: e.spent_on,
+        split_kind: e.split_kind,
+        note: e.note ?? null,
+        receipt_url: e.receipt_url ?? null,
+        created_by: user.id,
+      })
+      .select('id')
+      .single<{ id: string }>();
+
+    if (error || !expense) return { ok: false, error: error?.message ?? 'Could not save.' };
+    expenseId = expense.id;
+
+    const { error: splitErr } = await supabase.from('expense_splits').insert(
+      participants.map((id) => ({
+        expense_id: expenseId,
+        profile_id: id,
+        owed_cents: owed[id] ?? 0,
+        weight: e.weights?.[id] ?? null,
+      })),
+    );
+
+    if (splitErr) {
+      // Roll back rather than leave an expense with no splits, which would
+      // silently skew every balance in the house.
+      await supabase.from('expenses').delete().eq('id', expenseId);
+      return { ok: false, error: splitErr.message };
+    }
+
+    await supabase.from('activity_log').insert({
       household_id: me.household_id,
-      description: e.description,
-      amount_cents: amountCents,
-      category: e.category,
-      paid_by: e.paid_by,
-      spent_on: e.spent_on,
-      split_kind: e.split_kind,
-      note: e.note ?? null,
-      receipt_url: e.receipt_url ?? null,
-      created_by: user.id,
-    })
-    .select('id')
-    .single<{ id: string }>();
-
-  if (error || !expense) return { ok: false, error: error?.message ?? 'Could not save.' };
-
-  const { error: splitErr } = await supabase.from('expense_splits').insert(
-    e.participants.map((id) => ({
-      expense_id: expense.id,
-      profile_id: id,
-      owed_cents: owed[id] ?? 0,
-      weight: e.weights?.[id] ?? null,
-    })),
-  );
-
-  if (splitErr) {
-    // Roll back rather than leave an expense with no splits, which would
-    // silently skew every balance in the house.
-    await supabase.from('expenses').delete().eq('id', expense.id);
-    return { ok: false, error: splitErr.message };
+      actor_id: user.id,
+      verb: 'added_expense',
+      summary: `${me.full_name} added ${e.description} — $${(amountCents / 100).toFixed(2)}`,
+      metadata: { expense_id: expenseId, amount_cents: amountCents },
+    });
   }
-
-  await supabase.from('activity_log').insert({
-    household_id: me.household_id,
-    actor_id: user.id,
-    verb: 'added_expense',
-    summary: `${me.full_name} added ${e.description} — $${(amountCents / 100).toFixed(2)}`,
-    metadata: { expense_id: expense.id, amount_cents: amountCents },
-  });
 
   // One notification each, carrying that person's own share rather than the
   // total — "you owe $8.75" is the number they actually care about.
   await Promise.all(
-    e.participants
+    Object.keys(owed)
       .filter((id) => id !== user.id)
       .map((id) =>
         notifyProfiles([id], {
           title: `${e.description} — $${(amountCents / 100).toFixed(2)}`,
           body: `${me.full_name} paid. Your share is $${((owed[id] ?? 0) / 100).toFixed(2)}.`,
           url: '/expenses',
-          tag: `expense-${expense.id}`,
+          tag: `expense-${expenseId}`,
         }),
       ),
   );

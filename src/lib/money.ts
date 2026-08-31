@@ -50,6 +50,23 @@ export function splitByWeight(total: number, weights: Record<string, number>): R
   return out;
 }
 
+/**
+ * Split `total` equally, then nudge each person's share by their adjustment
+ * (positive or negative, in cents). Sums to `total` exactly because
+ * `splitEqual` already is, and the adjustments are added on top of it.
+ */
+export function splitByAdjustment(
+  total: number,
+  ids: string[],
+  adjustments: Record<string, number>,
+): Record<string, number> {
+  const sumAdj = ids.reduce((acc, id) => acc + (adjustments[id] ?? 0), 0);
+  const base = splitEqual(total - sumAdj, ids);
+  const out: Record<string, number> = {};
+  for (const id of ids) out[id] = base[id] + (adjustments[id] ?? 0);
+  return out;
+}
+
 export type Transfer = { from: string; to: string; cents: number };
 
 /**

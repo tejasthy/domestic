@@ -46,6 +46,11 @@ echo "  ok  pgcrypto in extensions + app role created (as in Supabase)"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0006_devices.sql" && echo "  ok  0006_devices.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0007_intro.sql" && echo "  ok  0007_intro.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0008_pgcrypto_schema.sql" && echo "  ok  0008_pgcrypto_schema.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0009_chore_admin.sql" && echo "  ok  0009_chore_admin.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0010_recurring_expenses.sql" && echo "  ok  0010_recurring_expenses.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0011_ai_config.sql" && echo "  ok  0011_ai_config.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0013_split_adjustment.sql" && echo "  ok  0013_split_adjustment.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0014_expense_items.sql" && echo "  ok  0014_expense_items.sql"
 
 # Only the auth-schema grants are left to do; everything in `public` came from
 # the default privileges set above, so 0004's column-level revoke still stands.
@@ -84,6 +89,7 @@ echo "── chore admin, recurring expenses, AI config ────────
 "${PSQL[@]}" < "$HERE/chore_admin.sql"
 "${PSQL[@]}" < "$HERE/recurring_expenses.sql"
 "${PSQL[@]}" < "$HERE/ai_config.sql"
+"${PSQL[@]}" < "$HERE/expense_items.sql"
 
 echo
 echo "All database checks passed."

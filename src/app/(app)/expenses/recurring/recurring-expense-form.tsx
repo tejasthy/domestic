@@ -17,7 +17,10 @@ const CATEGORIES = [
   'transport', 'entertainment', 'general',
 ] as const;
 
-const SPLIT_KINDS: { value: SplitKind; label: string }[] = [
+/** Recurring expenses don't offer 'adjustment' — no receipt, nothing to nudge. */
+type RecurringSplitKind = Exclude<SplitKind, 'adjustment'>;
+
+const SPLIT_KINDS: { value: RecurringSplitKind; label: string }[] = [
   { value: 'equal', label: 'Equal' },
   { value: 'exact', label: 'Exact amounts' },
   { value: 'shares', label: 'Shares' },
@@ -42,7 +45,7 @@ function presetToFields(preset: CadencePreset) {
   }
 }
 
-const WEIGHT_LABEL: Record<Exclude<SplitKind, 'equal'>, string> = {
+const WEIGHT_LABEL: Record<Exclude<RecurringSplitKind, 'equal'>, string> = {
   exact: 'Amount',
   shares: 'Shares',
   percent: 'Percent',
@@ -63,7 +66,9 @@ export function RecurringExpenseForm({ mode, me, members, recurring }: Props) {
   );
   const [paidBy, setPaidBy] = useState(recurring?.paid_by ?? me.id);
   const [category, setCategory] = useState<string>(recurring?.category ?? 'general');
-  const [splitKind, setSplitKind] = useState<SplitKind>(recurring?.split_kind ?? 'equal');
+  const [splitKind, setSplitKind] = useState<RecurringSplitKind>(
+    (recurring?.split_kind as RecurringSplitKind) ?? 'equal',
+  );
   const [participants, setParticipants] = useState<string[]>(
     recurring ? recurring.participants.map((p) => p.profile_id) : members.map((m) => m.id),
   );
@@ -194,7 +199,7 @@ export function RecurringExpenseForm({ mode, me, members, recurring }: Props) {
           </Select>
         </Field>
         <Field label="Split">
-          <Select value={splitKind} onChange={(e) => setSplitKind(e.target.value as SplitKind)}>
+          <Select value={splitKind} onChange={(e) => setSplitKind(e.target.value as RecurringSplitKind)}>
             {SPLIT_KINDS.map((s) => (
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}

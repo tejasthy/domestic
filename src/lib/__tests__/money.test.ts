@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  formatCents, parseDollars, simplifyDebts, splitByWeight, splitEqual,
+  formatCents, parseDollars, simplifyDebts, splitByAdjustment, splitByWeight, splitEqual,
 } from '../money';
 
 describe('splitEqual', () => {
@@ -27,6 +27,13 @@ describe('splitEqual', () => {
       expect(Object.values(out).reduce((x, y) => x + y, 0)).toBe(total);
     }
   });
+
+  it('still sums exactly for a negative total (a discount item split across people)', () => {
+    for (let total = -500; total <= -1; total++) {
+      const out = splitEqual(total, ['a', 'b', 'c']);
+      expect(Object.values(out).reduce((x, y) => x + y, 0)).toBe(total);
+    }
+  });
 });
 
 describe('splitByWeight', () => {
@@ -42,6 +49,34 @@ describe('splitByWeight', () => {
 
   it('falls back to an equal split when all weights are zero', () => {
     expect(splitByWeight(300, { a: 0, b: 0 })).toEqual({ a: 150, b: 150 });
+  });
+
+  it('sums exactly for a negative total too', () => {
+    const out = splitByWeight(-1000, { a: 1, b: 1, c: 2 });
+    expect(Object.values(out).reduce((x, y) => x + y, 0)).toBe(-1000);
+  });
+});
+
+describe('splitByAdjustment', () => {
+  it('starts from equal, then applies each adjustment on top', () => {
+    const out = splitByAdjustment(4000, ['a', 'b', 'c', 'd'], { a: 500, b: -500 });
+    // Equal share of the remaining 4000 is 1000 each; a gets +500, b gets -500.
+    expect(out).toEqual({ a: 1500, b: 500, c: 1000, d: 1000 });
+    expect(Object.values(out).reduce((x, y) => x + y, 0)).toBe(4000);
+  });
+
+  it('sums to the total exactly with an odd remainder', () => {
+    const out = splitByAdjustment(4003, ['a', 'b', 'c'], { a: 100 });
+    expect(Object.values(out).reduce((x, y) => x + y, 0)).toBe(4003);
+  });
+
+  it('is a no-op equal split when there are no adjustments', () => {
+    expect(splitByAdjustment(3000, ['a', 'b', 'c'], {})).toEqual({ a: 1000, b: 1000, c: 1000 });
+  });
+
+  it('handles adjustments for everyone summing to the whole total', () => {
+    const out = splitByAdjustment(1000, ['a', 'b'], { a: 700, b: 300 });
+    expect(out).toEqual({ a: 700, b: 300 });
   });
 });
 
