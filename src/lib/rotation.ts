@@ -42,13 +42,13 @@ export type DueBucket = 'overdue' | 'today' | 'tomorrow' | 'upcoming' | 'anytime
 
 /** "YYYY-MM-DD" as seen in `timeZone` — lexicographically sortable, so day
  * boundaries become string comparisons instead of DST-sensitive Date math. */
-function dayKey(date: Date, timeZone: string): string {
+export function dayKey(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(date);
 }
 
-function shiftDayKey(key: string, days: number): string {
+export function shiftDayKey(key: string, days: number): string {
   const [y, m, d] = key.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }

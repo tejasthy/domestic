@@ -15,11 +15,14 @@ const ICONS = {
 
 type Tab = { href: string; label: string; icon: React.ComponentType<{ size?: number }> };
 
-/** Today and You always exist; everything between them is module-driven. */
+/** Today, Activity, and You always exist; everything between Today and
+ * Activity is module-driven. Activity spans chores + expenses both, so it
+ * isn't owned by either module the way the kiosk's "Lately" feed is. */
 function tabsFor(modules: string[]): Tab[] {
   return [
     { href: '/', label: 'Today', icon: Icon.Home },
     ...navFor(modules).map((n) => ({ href: n.href, label: n.label, icon: ICONS[n.icon] })),
+    { href: '/activity', label: 'Activity', icon: Icon.Clock },
     { href: '/settings', label: 'You', icon: Icon.Settings },
   ];
 }
