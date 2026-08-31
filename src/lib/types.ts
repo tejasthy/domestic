@@ -5,6 +5,8 @@ export type ChoreCadence = 'scheduled' | 'on_demand';
 export type TurnStatus = 'pending' | 'done' | 'skipped' | 'missed';
 export type SplitKind = 'equal' | 'exact' | 'shares' | 'percent';
 export type SwapStatus = 'pending' | 'accepted' | 'declined' | 'cancelled';
+export type RecurringCadence = 'weekly' | 'monthly';
+export type AiProvider = 'anthropic' | 'gemini';
 
 export type Household = {
   id: string;
@@ -100,6 +102,32 @@ export type Expense = {
 
 export type ExpenseSplit = {
   expense_id: string;
+  profile_id: string;
+  owed_cents: number;
+  weight: number | null;
+};
+
+export type RecurringExpense = {
+  id: string;
+  household_id: string;
+  description: string;
+  amount_cents: number;
+  currency: string;
+  category: string;
+  paid_by: string;
+  split_kind: SplitKind;
+  cadence: RecurringCadence;
+  interval_weeks: number;
+  interval_months: number;
+  day_of_month: number | null;
+  next_run_on: string;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type RecurringExpenseParticipant = {
+  recurring_expense_id: string;
   profile_id: string;
   owed_cents: number;
   weight: number | null;
@@ -203,7 +231,7 @@ type Defaulted =
   | 'emoji' | 'days_of_week' | 'interval_weeks' | 'anchor_date' | 'due_hour'
   | 'queue_depth' | 'lookahead_days' | 'sort_order' | 'is_active' | 'status'
   | 'spent_on' | 'settled_on' | 'split_kind' | 'category' | 'method'
-  | 'metadata' | 'turn_number' | 'position';
+  | 'metadata' | 'turn_number' | 'position' | 'interval_months' | 'next_run_on';
 
 /** Nullable columns are optional on insert too — Postgres fills them with NULL. */
 type NullableKeys<Row> = {
@@ -232,6 +260,8 @@ export type Database = {
       chore_swaps: Table<ChoreSwap>;
       expenses: Table<Expense>;
       expense_splits: Table<ExpenseSplit>;
+      recurring_expenses: Table<RecurringExpense>;
+      recurring_expense_participants: Table<RecurringExpenseParticipant>;
       settlements: Table<Settlement>;
       push_subscriptions: Table<PushSubscriptionRow>;
       kiosk_devices: Table<KioskDevice>;
@@ -307,6 +337,83 @@ export type Database = {
       enabled_modules: { Args: { p_household: string }; Returns: string[] };
       default_modules: { Args: Record<PropertyKey, never>; Returns: string[] };
       resync_pending_turns: { Args: { p_chore: string }; Returns: number };
+      create_chore: {
+        Args: {
+          p_name: string;
+          p_cadence: ChoreCadence;
+          p_emoji?: string;
+          p_description?: string | null;
+          p_days_of_week?: number[];
+          p_interval_weeks?: number;
+          p_due_hour?: number;
+          p_queue_depth?: number;
+          p_lookahead_days?: number;
+          p_profile_ids?: string[];
+        };
+        Returns: Chore;
+      };
+      update_chore: {
+        Args: {
+          p_chore: string;
+          p_name?: string | null;
+          p_emoji?: string | null;
+          p_description?: string | null;
+          p_cadence?: ChoreCadence | null;
+          p_days_of_week?: number[] | null;
+          p_interval_weeks?: number | null;
+          p_due_hour?: number | null;
+          p_queue_depth?: number | null;
+          p_lookahead_days?: number | null;
+          p_sort_order?: number | null;
+        };
+        Returns: Chore;
+      };
+      set_chore_active: { Args: { p_chore: string; p_active: boolean }; Returns: undefined };
+      set_chore_rotation: { Args: { p_chore: string; p_profile_ids: string[] }; Returns: undefined };
+      create_recurring_expense: {
+        Args: {
+          p_description: string;
+          p_amount_cents: number;
+          p_paid_by: string;
+          p_split_kind: SplitKind;
+          p_cadence: RecurringCadence;
+          p_participants: { profile_id: string; owed_cents: number; weight: number | null }[];
+          p_category?: string;
+          p_interval_weeks?: number;
+          p_interval_months?: number;
+          p_day_of_month?: number | null;
+          p_start_on?: string;
+        };
+        Returns: RecurringExpense;
+      };
+      update_recurring_expense: {
+        Args: {
+          p_id: string;
+          p_description?: string | null;
+          p_amount_cents?: number | null;
+          p_paid_by?: string | null;
+          p_split_kind?: SplitKind | null;
+          p_category?: string | null;
+          p_cadence?: RecurringCadence | null;
+          p_interval_weeks?: number | null;
+          p_interval_months?: number | null;
+          p_day_of_month?: number | null;
+          p_participants?: { profile_id: string; owed_cents: number; weight: number | null }[] | null;
+        };
+        Returns: RecurringExpense;
+      };
+      set_recurring_expense_active: { Args: { p_id: string; p_active: boolean }; Returns: undefined };
+      post_due_recurring_expenses: { Args: Record<PropertyKey, never>; Returns: Expense[] };
+      set_ai_config: { Args: { p_provider: AiProvider; p_api_key: string; p_secret: string }; Returns: undefined };
+      clear_ai_config: { Args: Record<PropertyKey, never>; Returns: undefined };
+      get_ai_config_summary: {
+        Args: Record<PropertyKey, never>;
+        Returns: { provider: AiProvider; updated_at: string }[];
+      };
+      get_ai_credentials: {
+        Args: { p_secret: string };
+        Returns: { provider: AiProvider; api_key: string }[];
+      };
     };
     Enums: {
       chore_cadence: ChoreCadence;

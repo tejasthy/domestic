@@ -160,3 +160,35 @@ export async function createKioskDevice(
   // Shown once — only the hash is stored, so it cannot be retrieved later.
   return { ok: true, token: data as unknown as string };
 }
+
+/* ---------------------------------------------------------- admin: AI key */
+
+export async function getAiConfigSummary(): Promise<{ provider: string; updatedAt: string } | null> {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc('get_ai_config_summary');
+  const row = Array.isArray(data) ? data[0] : null;
+  return row ? { provider: row.provider, updatedAt: row.updated_at } : null;
+}
+
+export async function setAiConfig(provider: 'anthropic' | 'gemini', apiKey: string): Promise<ActionResult> {
+  const secret = process.env.AI_CONFIG_ENCRYPTION_KEY;
+  if (!secret) return { ok: false, error: 'AI_CONFIG_ENCRYPTION_KEY is not set on the server.' };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('set_ai_config', {
+    p_provider: provider,
+    p_api_key: apiKey,
+    p_secret: secret,
+  });
+  if (error) return fail(error, 'Could not save that key.');
+  revalidatePath('/settings/household');
+  return { ok: true };
+}
+
+export async function clearAiConfig(): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('clear_ai_config');
+  if (error) return fail(error, 'Could not remove that key.');
+  revalidatePath('/settings/household');
+  return { ok: true };
+}

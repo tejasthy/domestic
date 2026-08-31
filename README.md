@@ -94,8 +94,10 @@ npm run gen:vapid
 npm run gen:secrets
 ```
 
-Paste both outputs into `.env.local`. Add `ANTHROPIC_API_KEY` if you want
-receipt scanning (everything else works without it).
+Paste both outputs into `.env.local`. `AI_CONFIG_ENCRYPTION_KEY` from
+`gen:secrets` protects whichever receipt-scanning key an admin adds later —
+that key itself is set per household, in the app (everything else works
+without it either way).
 
 > The VAPID keypair is permanent. Regenerating it silently invalidates every
 > push subscription, and the only symptom is that notifications quietly stop.
@@ -214,11 +216,15 @@ Quiet hours default to 10pm–8am per person and are enforced server-side.
 
 ## Receipt scanning
 
+An admin adds a provider and API key under **Settings → Household → Receipt
+scanning** — Claude or Gemini, whichever they have a key for. The key is
+encrypted at rest and never sent back to any browser, including the admin's
+own; nothing works until one is configured.
+
 Tap **Scan a receipt** when adding an expense. The photo is downscaled in the
 browser to 1568px (Claude's maximum useful resolution — this also converts
-iPhone HEIC to JPEG on the way through), sent to `/api/receipt`, and read by
-Claude Opus 5 with a strict output schema. Merchant, total, date, and category
-prefill the form.
+iPhone HEIC to JPEG on the way through), sent to `/api/receipt`, and read with
+a strict output schema. Merchant, total, date, and category prefill the form.
 
 It is prompted to report only what it can actually read and to flag illegible
 photos rather than guess — the fields are always editable, and you should glance

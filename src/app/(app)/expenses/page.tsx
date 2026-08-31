@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { getExpenses, getBalances, getSettlements, requireModule } from '@/lib/data';
 import { Card, SectionHeader, Initials, LinkButton, EmptyState, Pill } from '@/components/ui';
 import { Icon } from '@/components/brand';
@@ -29,6 +30,9 @@ export default async function ExpensesPage() {
           <p className="t-body-md text-ink-muted mt-0.5">
             Shared costs for the house.
           </p>
+          <Link href="/expenses/recurring" className="t-body-sm text-accent font-medium mt-1 inline-block">
+            Manage recurring →
+          </Link>
         </div>
         <LinkButton href="/expenses/new" size="md">
           <Icon.Plus size={18} />

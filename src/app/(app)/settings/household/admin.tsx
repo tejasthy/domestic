@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from 'react';
 import {
-  createInvite, createKioskDevice, removeMember,
-  revokeInvite, setMemberAdmin, setModule,
+  clearAiConfig, createInvite, createKioskDevice, removeMember,
+  revokeInvite, setAiConfig, setMemberAdmin, setModule,
 } from '@/lib/household-actions';
 import { Button, Card, Field, Initials, Input, Pill, Select, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
@@ -492,5 +492,129 @@ export function KioskDevices({
         </Card>
       )}
     </>
+  );
+}
+
+/* ------------------------------------------------------------ ai config */
+
+const AI_PROVIDERS: Record<string, string> = {
+  anthropic: 'Anthropic',
+  gemini: 'Gemini',
+};
+
+export function AiConfig({
+  summary,
+}: {
+  summary: { provider: string; updatedAt: string } | null;
+}) {
+  const [pending, start] = useTransition();
+  const [editing, setEditing] = useState(false);
+  const [provider, setProvider] = useState<'anthropic' | 'gemini'>('anthropic');
+  const [apiKey, setApiKey] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  if (summary && !editing) {
+    return (
+      <Card className="p-4 space-y-3">
+        <div>
+          <p className="t-body-md text-ink">
+            {AI_PROVIDERS[summary.provider] ?? summary.provider} — configured
+          </p>
+          <p className="t-body-sm text-ink-muted">
+            Updated{' '}
+            {new Date(summary.updatedAt).toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+            })}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            size="md"
+            tone="secondary"
+            onClick={() => {
+              setError(null);
+              setEditing(true);
+            }}
+          >
+            Replace key
+          </Button>
+          {confirming ? (
+            <Button
+              size="md"
+              tone="danger"
+              disabled={pending}
+              onClick={() =>
+                start(async () => {
+                  const res = await clearAiConfig();
+                  if (!res.ok) setError(res.error);
+                  setConfirming(false);
+                })
+              }
+            >
+              Really remove
+            </Button>
+          ) : (
+            <Button size="md" tone="ghost" onClick={() => setConfirming(true)}>
+              Remove
+            </Button>
+          )}
+        </div>
+        {error && <p className="t-body-sm text-danger mt-2">{error}</p>}
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="p-4 space-y-4">
+      <Field label="Provider">
+        <Select
+          value={provider}
+          onChange={(e) => setProvider(e.target.value as 'anthropic' | 'gemini')}
+        >
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="gemini">Google (Gemini)</option>
+        </Select>
+      </Field>
+
+      <Field label="API key" hint="Encrypted at rest. Once saved, it can never be shown again.">
+        <Input
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder="sk-..."
+          autoComplete="off"
+        />
+      </Field>
+
+      {error && <p className="t-body-sm text-danger">{error}</p>}
+
+      <div className="flex gap-2">
+        <Button
+          size="md"
+          disabled={pending}
+          onClick={() => {
+            setError(null);
+            start(async () => {
+              const res = await setAiConfig(provider, apiKey);
+              if (res.ok) {
+                setApiKey('');
+                setEditing(false);
+              } else {
+                setError(res.error);
+              }
+            });
+          }}
+        >
+          {pending ? 'Saving…' : 'Save'}
+        </Button>
+        {summary && (
+          <Button size="md" tone="ghost" onClick={() => setEditing(false)}>
+            Cancel
+          </Button>
+        )}
+      </div>
+    </Card>
   );
 }
