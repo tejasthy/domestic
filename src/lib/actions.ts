@@ -147,6 +147,32 @@ export async function requestSwap(
   return { ok: true };
 }
 
+/** A short note that shows up on the wall display for a couple of days. */
+export async function postKioskMessage(body: string): Promise<ActionResult> {
+  const trimmed = body.trim();
+  if (!trimmed) return { ok: false, error: 'Say something first.' };
+  if (trimmed.length > 280) return { ok: false, error: 'Keep it under 280 characters.' };
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'Not signed in.' };
+
+  const { data: me } = await supabase
+    .from('profiles').select('household_id').eq('id', user.id)
+    .single<{ household_id: string }>();
+  if (!me?.household_id) return { ok: false, error: 'No household.' };
+
+  const { error } = await supabase.from('kiosk_messages').insert({
+    household_id: me.household_id,
+    author_id: user.id,
+    body: trimmed,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
 export async function respondToSwap(swapId: string, accept: boolean): Promise<ActionResult> {
   const supabase = await createClient();
 

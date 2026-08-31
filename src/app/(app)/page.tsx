@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { getSession, getChores, getOpenTurns, getBalances } from '@/lib/data';
 import { TurnRow, FlagButton, SwapRequestRow } from '@/components/turn-card';
+import { KioskNote } from '@/components/kiosk-note';
 import { Card, EmptyState, SectionHeader, Initials } from '@/components/ui';
 import { formatCents } from '@/lib/money';
 import { bucketFor } from '@/lib/rotation';
@@ -99,7 +100,7 @@ export default async function TodayPage() {
         ) : (
           <div className="space-y-2">
             {mineNow.map((t) => (
-              <TurnRow key={t.id} turn={t} mine />
+              <TurnRow key={t.id} turn={t} mine crossComplete={household.allow_member_cross_complete} />
             ))}
           </div>
         )}
@@ -134,7 +135,7 @@ export default async function TodayPage() {
           />
           <div className="space-y-2">
             {theirs.slice(0, 6).map((t) => (
-              <TurnRow key={t.id} turn={t} mine={false} />
+              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} />
             ))}
           </div>
         </section>
@@ -145,7 +146,7 @@ export default async function TodayPage() {
           <SectionHeader title="Coming up for you" />
           <div className="space-y-2">
             {mineLater.map((t) => (
-              <TurnRow key={t.id} turn={t} mine={false} />
+              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} />
             ))}
           </div>
         </section>
@@ -197,6 +198,13 @@ export default async function TodayPage() {
           </div>
         </Card>
       </section>
+      )}
+
+      {modules.includes('kiosk') && (
+        <section>
+          <SectionHeader title="Leave a note for the kiosk" />
+          <KioskNote />
+        </section>
       )}
 
       {!showChores && !showMoney && (

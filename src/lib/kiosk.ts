@@ -1,7 +1,7 @@
 import 'server-only';
 import { cookies } from 'next/headers';
 import { createAdminClient } from '@/lib/supabase/server';
-import type { ActivityEntry, Balance, Chore, Profile, TurnCard } from '@/lib/types';
+import type { ActivityEntry, Balance, Chore, KioskMessage, Profile, TurnCard } from '@/lib/types';
 
 export const KIOSK_COOKIE = 'domestic_kiosk';
 
@@ -42,14 +42,30 @@ export async function resolveDeviceToken(
 
 export const resolveKioskToken = (token: string) => resolveDeviceToken(token, 'kiosk');
 
+export type KioskSwap = {
+  id: string;
+  message: string | null;
+  requested_to: string;
+  chore_name: string;
+  requester_name: string;
+};
+
 export type KioskData = {
-  household: { id: string; name: string; timezone: string };
+  household: {
+    id: string;
+    name: string;
+    timezone: string;
+    latitude: number | null;
+    longitude: number | null;
+  };
   members: Profile[];
   chores: Chore[];
   upNext: TurnCard[];
   balances: Record<string, number>;
   activity: ActivityEntry[];
   modules: string[];
+  swaps: KioskSwap[];
+  messages: KioskMessage[];
 };
 
 const TURN_SELECT = `
@@ -69,16 +85,18 @@ export async function loadKiosk(householdId: string): Promise<KioskData | null> 
 
   const { data: household } = await admin
     .from('households')
-    .select('id, name, timezone')
+    .select('id, name, timezone, latitude, longitude')
     .eq('id', householdId)
-    .single<{ id: string; name: string; timezone: string }>();
+    .single<{ id: string; name: string; timezone: string; latitude: number | null; longitude: number | null }>();
 
   if (!household) return null;
 
   const { data: modules } = await admin.rpc('enabled_modules', { p_household: household.id });
 
-  const [{ data: members }, { data: chores }, { data: turns }, { data: balances }, { data: activity }] =
-    await Promise.all([
+  const [
+    { data: members }, { data: chores }, { data: turns }, { data: balances },
+    { data: activity }, { data: swaps }, { data: messages },
+  ] = await Promise.all([
       admin.from('profiles').select('*').eq('household_id', household.id)
         .order('initials').returns<Profile[]>(),
       admin.from('chores').select('*').eq('household_id', household.id)
@@ -91,6 +109,19 @@ export async function loadKiosk(householdId: string): Promise<KioskData | null> 
       admin.from('activity_log').select('*')
         .eq('household_id', household.id)
         .order('created_at', { ascending: false }).limit(8).returns<ActivityEntry[]>(),
+      admin.from('chore_swaps')
+        .select(`
+          id, message, requested_to, status,
+          turn:chore_turns!inner ( household_id, chore:chores ( name ) ),
+          requester:profiles!chore_swaps_requested_by_fkey ( full_name )
+        `)
+        .eq('status', 'pending')
+        .eq('turn.household_id', household.id)
+        .returns<{ id: string; message: string | null; requested_to: string; turn: { chore: { name: string } }; requester: { full_name: string } }[]>(),
+      admin.from('kiosk_messages').select('*')
+        .eq('household_id', household.id)
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false }).limit(3).returns<KioskMessage[]>(),
     ]);
 
   // One row per chore: whoever is actually up.
@@ -109,5 +140,13 @@ export async function loadKiosk(householdId: string): Promise<KioskData | null> 
     balances: Object.fromEntries((balances ?? []).map((b) => [b.profile_id, b.net_cents])),
     activity: activity ?? [],
     modules: (modules as string[] | null) ?? [],
+    swaps: (swaps ?? []).map((s) => ({
+      id: s.id,
+      message: s.message,
+      requested_to: s.requested_to,
+      chore_name: s.turn.chore.name,
+      requester_name: s.requester.full_name,
+    })),
+    messages: messages ?? [],
   };
 }
