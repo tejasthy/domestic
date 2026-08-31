@@ -182,20 +182,28 @@ export function KioskTurnCard({
   );
 }
 
-/** "Dishwasher's full" — flags an on-demand chore from the kiosk. */
+/**
+ * "Dishwasher's full" — flags an on-demand chore from the kiosk. `flagged`
+ * comes from the server (is there already a pending, due'd turn for this
+ * chore?) rather than local state, so the button resets on its own once that
+ * turn is completed and a fresh unflagged one is queued behind it — local
+ * state would otherwise stay stuck on "Flagged" forever since the chore's key
+ * never changes across a refresh.
+ */
 export function KioskFlagButton({
   choreId,
   emoji,
   label,
+  flagged,
 }: {
   choreId: string;
   emoji: string;
   label: string;
+  flagged: boolean;
 }) {
   const { actingId } = useActingAs();
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [flagged, setFlagged] = useState(false);
 
   return (
     <button
@@ -205,10 +213,7 @@ export function KioskFlagButton({
         if (!actingId) return;
         start(async () => {
           const res = await kioskFlagChore(choreId, actingId);
-          if (res.ok) {
-            setFlagged(true);
-            router.refresh();
-          }
+          if (res.ok) router.refresh();
         });
       }}
       className={cx(
@@ -219,7 +224,7 @@ export function KioskFlagButton({
     >
       <span className="text-2xl" aria-hidden>{emoji}</span>
       <span className="t-body-sm font-medium text-ink text-center leading-tight">
-        {flagged ? 'Flagged' : label}
+        {pending ? 'Flagging…' : flagged ? 'Flagged' : label}
       </span>
     </button>
   );
