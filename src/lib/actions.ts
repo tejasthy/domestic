@@ -145,6 +145,44 @@ export async function skipTurn(turnId: string, note?: string): Promise<ActionRes
   return { ok: true };
 }
 
+/** Hands the turn to the next person in the rotation — same day, same turn
+ * number — instead of cancelling the occurrence outright. */
+export async function passTurn(turnId: string, note?: string): Promise<ActionResult> {
+  const supabase = await createClient();
+
+  const { data: turn } = await supabase
+    .from('chore_turns')
+    .select('id, chore_id, assignee_id, household_id, chore:chores(name, emoji)')
+    .eq('id', turnId)
+    .single<{ id: string; chore_id: string; assignee_id: string; household_id: string; chore: { name: string; emoji: string } }>();
+
+  const { error } = await supabase.rpc('pass_turn', {
+    p_turn: turnId,
+    p_note: note ?? null,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  if (turn) {
+    const { data: next } = await supabase
+      .from('chore_turns')
+      .select('assignee_id')
+      .eq('id', turnId)
+      .single<{ assignee_id: string }>();
+
+    if (next && next.assignee_id !== turn.assignee_id) {
+      await notifyProfiles([next.assignee_id], {
+        title: `${turn.chore.emoji} You're up: ${turn.chore.name}`,
+        body: `${turn.chore.name} was passed to you.`,
+        url: '/',
+        tag: `chore-${turn.chore_id}`,
+      });
+    }
+  }
+
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
 /** Reopens a turn that was marked done or skipped by mistake. */
 export async function undoTurn(turnId: string): Promise<ActionResult> {
   const supabase = await createClient();
@@ -665,6 +703,27 @@ export async function markIntroSeen(): Promise<ActionResult> {
     .eq('id', user.id);
   if (error) return { ok: false, error: error.message };
 
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+/** Marks the caller away (optionally until a return date) and pulls them out
+ * of every active chore's rotation — resync/top-up happen inside the RPC. */
+export async function setAway(until?: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('set_away', { p_until: until ?? null });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/settings');
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+/** Ends the caller's away period early and puts them back in rotation. */
+export async function clearAway(): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('clear_away');
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/settings');
   revalidatePath('/', 'layout');
   return { ok: true };
 }

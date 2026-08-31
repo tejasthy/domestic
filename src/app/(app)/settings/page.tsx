@@ -4,6 +4,7 @@ import { getSession, getChoreStats, getChores, hasPushSubscription } from '@/lib
 import { Card, SectionHeader, Initials, Button } from '@/components/ui';
 import { signOut } from '@/lib/actions';
 import { PushToggle } from './push-toggle';
+import { AwayToggle } from './away-toggle';
 import { ReplayIntro } from '@/components/intro';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { THEME_COOKIE, parseThemeCookie } from '@/lib/theme';
@@ -58,6 +59,13 @@ export default async function SettingsPage() {
           quietTo={me.quiet_to}
         />
       </section>
+
+      {modules.includes('chores') && (
+      <section>
+        <SectionHeader title="Away" />
+        <AwayToggle away={me.away ?? null} />
+      </section>
+      )}
 
       {modules.includes('chores') && (
       <section>

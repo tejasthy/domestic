@@ -38,6 +38,19 @@ export type Profile = {
   quiet_to: number;
   intro_seen_at: string | null;
   created_at: string;
+  /** Populated by getSession() from member_away; not a `profiles` column. */
+  away?: MemberAway;
+};
+
+export type MemberAway = { since: string; until: string | null } | null;
+
+export type MemberAwayRow = {
+  id: string;
+  profile_id: string;
+  household_id: string;
+  starts_at: string;
+  ends_at: string | null;
+  created_at: string;
 };
 
 export type Chore = {
@@ -266,7 +279,7 @@ type Defaulted =
   | 'queue_depth' | 'lookahead_days' | 'sort_order' | 'is_active' | 'status'
   | 'spent_on' | 'settled_on' | 'split_kind' | 'category' | 'method'
   | 'metadata' | 'turn_number' | 'position' | 'interval_months' | 'next_run_on'
-  | 'allow_member_cross_complete' | 'expires_at';
+  | 'allow_member_cross_complete' | 'expires_at' | 'starts_at';
 
 /** Nullable columns are optional on insert too — Postgres fills them with NULL. */
 type NullableKeys<Row> = {
@@ -306,6 +319,7 @@ export type Database = {
       household_modules: Table<HouseholdModule>;
       kiosk_messages: Table<KioskMessage>;
       activity_log: Table<ActivityEntry>;
+      member_away: Table<MemberAwayRow>;
     };
     Views: {
       v_balances: View<Balance>;
@@ -314,7 +328,11 @@ export type Database = {
     Functions: {
       current_household_id: { Args: Record<PropertyKey, never>; Returns: string };
       is_household_member: { Args: { target: string }; Returns: boolean };
-      rotation_assignee: { Args: { p_chore: string; p_turn: number }; Returns: string };
+      rotation_assignee: { Args: { p_chore: string; p_turn: number; p_at?: string }; Returns: string };
+      is_away_at: { Args: { p_profile: string; p_at?: string }; Returns: boolean };
+      pass_turn: { Args: { p_turn: string; p_note?: string | null }; Returns: ChoreTurn };
+      set_away: { Args: { p_until?: string | null }; Returns: MemberAwayRow };
+      clear_away: { Args: Record<PropertyKey, never>; Returns: void };
       append_turn: { Args: { p_chore: string; p_due?: string | null }; Returns: ChoreTurn };
       top_up_queue: { Args: { p_chore: string }; Returns: number };
       materialize_schedule: { Args: { p_chore: string }; Returns: number };

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { completeTurn, skipTurn, undoTurn, flagChore, respondToSwap } from '@/lib/actions';
+import { completeTurn, skipTurn, passTurn, undoTurn, flagChore, respondToSwap } from '@/lib/actions';
 import { Button, Card, Initials, Pill, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
 import { bucketFor } from '@/lib/rotation';
@@ -38,7 +38,7 @@ export function TurnRow({
   className?: string;
 }) {
   const [pending, start] = useTransition();
-  const [settled, setSettled] = useState<'done' | 'skipped' | null>(null);
+  const [settled, setSettled] = useState<'done' | 'skipped' | 'passed' | null>(null);
   const [undone, setUndone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const due = dueLabel(turn, timeZone);
@@ -63,6 +63,18 @@ export function TurnRow({
     setSettled('skipped');
     start(async () => {
       const res = await skipTurn(turn.id);
+      if (!res.ok) {
+        setSettled(null);
+        setError(res.error);
+      }
+    });
+  }
+
+  function onPass() {
+    setError(null);
+    setSettled('passed');
+    start(async () => {
+      const res = await passTurn(turn.id);
       if (!res.ok) {
         setSettled(null);
         setError(res.error);
@@ -99,23 +111,31 @@ export function TurnRow({
         <span
           className={cx(
             'w-9 h-9 grid place-items-center rounded-pill shrink-0',
-            settled === 'done' ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning',
+            settled === 'done' && 'bg-success/15 text-success',
+            settled === 'skipped' && 'bg-warning/15 text-warning',
+            settled === 'passed' && 'bg-info/15 text-info',
           )}
         >
-          {settled === 'done' ? <Icon.Check size={20} /> : <Icon.SkipForward size={18} />}
+          {settled === 'done' && <Icon.Check size={20} />}
+          {settled === 'skipped' && <Icon.SkipForward size={18} />}
+          {settled === 'passed' && <Icon.Swap size={18} />}
         </span>
         <p className="t-body-md text-ink-2 flex-1 min-w-0">
-          <span className="line-through">{turn.chore.name}</span>
-          {settled === 'done' ? ' — nice.' : ' — skipped.'}
+          <span className={settled === 'passed' ? undefined : 'line-through'}>{turn.chore.name}</span>
+          {settled === 'done' && ' — nice.'}
+          {settled === 'skipped' && ' — skipped.'}
+          {settled === 'passed' && ' — passed on.'}
         </p>
-        <button
-          type="button"
-          onClick={onUndo}
-          disabled={pending}
-          className="t-body-sm font-medium text-accent shrink-0 disabled:opacity-50"
-        >
-          Undo
-        </button>
+        {settled !== 'passed' && (
+          <button
+            type="button"
+            onClick={onUndo}
+            disabled={pending}
+            className="t-body-sm font-medium text-accent shrink-0 disabled:opacity-50"
+          >
+            Undo
+          </button>
+        )}
       </Card>
     );
   }
@@ -148,6 +168,20 @@ export function TurnRow({
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               type="button"
+              onClick={onPass}
+              disabled={pending}
+              aria-label={
+                mine
+                  ? `Pass my turn for ${turn.chore.name} to the next person`
+                  : `Pass ${turn.assignee.full_name.split(' ')[0]}'s turn for ${turn.chore.name} to the next person`
+              }
+              title="Pass — give this to the next person, same day"
+              className="w-10 h-10 grid place-items-center rounded-md text-ink-muted hover:bg-hover active:bg-sunken disabled:opacity-50"
+            >
+              <Icon.Swap size={18} />
+            </button>
+            <button
+              type="button"
               onClick={onSkip}
               disabled={pending}
               aria-label={
@@ -155,7 +189,7 @@ export function TurnRow({
                   ? `Skip my turn for ${turn.chore.name}`
                   : `Skip ${turn.assignee.full_name.split(' ')[0]}'s turn for ${turn.chore.name}`
               }
-              title="Skip — out of town, etc."
+              title="Skip — no one does this one"
               className="w-10 h-10 grid place-items-center rounded-md text-ink-muted hover:bg-hover active:bg-sunken disabled:opacity-50"
             >
               <Icon.SkipForward size={18} />
