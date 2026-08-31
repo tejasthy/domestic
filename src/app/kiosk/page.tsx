@@ -52,6 +52,7 @@ export default async function KioskPage({
   const byId = new Map(members.map((m) => [m.id, m]));
   const adminIds = members.filter((m) => m.is_admin).map((m) => m.id);
   const onDemand = chores.filter((c) => c.cadence === 'on_demand');
+  const upNextByChore = new Map(upNext.map((t) => [t.chore_id, t]));
 
   const weather =
     household.latitude != null && household.longitude != null
@@ -70,7 +71,7 @@ export default async function KioskPage({
   return (
     <ActingAsProvider>
       <main className="kiosk min-h-dvh bg-page p-8 select-none">
-        <AutoRefresh seconds={45} />
+        <AutoRefresh seconds={5} />
 
         <header className="flex items-end justify-between mb-4">
           <div className="flex items-center gap-4">
@@ -167,7 +168,13 @@ export default async function KioskPage({
                 <h2 className="t-label text-ink-muted mt-8 mb-3">Flag something</h2>
                 <div className="grid grid-cols-3 gap-3">
                   {onDemand.map((c) => (
-                    <KioskFlagButton key={c.id} choreId={c.id} emoji={c.emoji} label={c.name} />
+                    <KioskFlagButton
+                      key={c.id}
+                      choreId={c.id}
+                      emoji={c.emoji}
+                      label={c.name}
+                      flagged={upNextByChore.get(c.id)?.due_at != null}
+                    />
                   ))}
                 </div>
               </>
