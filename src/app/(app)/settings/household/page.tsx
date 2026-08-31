@@ -40,6 +40,7 @@ export default async function HouseholdSettingsPage() {
                 <Initials initials={m.initials} color={m.color} size="md" />
                 <span className="t-body-md text-ink flex-1">{m.full_name}</span>
                 {m.is_admin && <Pill tone="accent">admin</Pill>}
+                {!!m.away && <Pill tone="neutral">away</Pill>}
               </div>
             ))}
           </Card>
@@ -83,6 +84,7 @@ export default async function HouseholdSettingsPage() {
               isAdmin={m.is_admin}
               isSelf={m.id === me.id}
               adminCount={members.filter((x) => x.is_admin).length}
+              away={!!m.away}
             />
           ))}
         </Card>

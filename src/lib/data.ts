@@ -3,8 +3,8 @@ import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import type {
   ActivityEntry, Balance, Chore, Expense, ExpenseSplit, ExpenseItem, ExpenseItemSplit,
-  Household, HouseholdInvite, KioskMessage, Profile, RecurringExpense, RecurringExpenseParticipant,
-  Settlement, TurnCard,
+  Household, HouseholdInvite, KioskMessage, MemberAwayRow, Profile, RecurringExpense,
+  RecurringExpenseParticipant, Settlement, TurnCard,
 } from '@/lib/types';
 import { DEFAULT_MODULES, type ModuleKey } from '@/lib/modules';
 
@@ -36,7 +36,7 @@ export const getSession = cache(async () => {
     };
   }
 
-  const [{ data: household }, { data: members }, { data: modules }] = await Promise.all([
+  const [{ data: household }, { data: members }, { data: modules }, { data: away }] = await Promise.all([
     supabase.from('households').select('*').eq('id', me.household_id).single(),
     supabase
       .from('profiles')
@@ -45,12 +45,23 @@ export const getSession = cache(async () => {
       .order('initials')
       .returns<Profile[]>(),
     supabase.rpc('enabled_modules', { p_household: me.household_id }),
+    supabase
+      .from('member_away')
+      .select('profile_id, starts_at, ends_at')
+      .eq('household_id', me.household_id)
+      .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`)
+      .returns<Pick<MemberAwayRow, 'profile_id' | 'starts_at' | 'ends_at'>[]>(),
   ]);
 
+  const awayByProfile = new Map(
+    (away ?? []).map((a) => [a.profile_id, { since: a.starts_at, until: a.ends_at }]),
+  );
+  const withAway = (p: Profile): Profile => ({ ...p, away: awayByProfile.get(p.id) ?? null });
+
   return {
-    me,
+    me: withAway(me),
     household,
-    members: members ?? [],
+    members: (members ?? []).map(withAway),
     // If the RPC is unavailable (mid-migration), fall back to the defaults
     // rather than rendering a household with no navigation at all.
     modules: (modules as string[] | null) ?? DEFAULT_MODULES,

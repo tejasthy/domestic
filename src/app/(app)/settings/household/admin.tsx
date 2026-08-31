@@ -50,7 +50,7 @@ function inviteMessage(householdName: string, code: string, origin: string) {
 /* ------------------------------------------------------------------ members */
 
 export function MemberRow({
-  id, name, initials, color, isAdmin, isSelf, adminCount,
+  id, name, initials, color, isAdmin, isSelf, adminCount, away,
 }: {
   id: string;
   name: string;
@@ -59,6 +59,7 @@ export function MemberRow({
   isAdmin: boolean;
   isSelf: boolean;
   adminCount: number;
+  away?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +76,10 @@ export function MemberRow({
           <p className="t-body-md text-ink truncate">
             {name} {isSelf && <span className="text-ink-muted">(you)</span>}
           </p>
-          {isAdmin && <Pill tone="accent">admin</Pill>}
+          <div className="flex gap-1.5 mt-0.5">
+            {isAdmin && <Pill tone="accent">admin</Pill>}
+            {away && <Pill tone="neutral">away</Pill>}
+          </div>
         </div>
 
         {!isSelf && (
