@@ -583,7 +583,7 @@ function KioskWeatherModal({ weather, onClose }: { weather: Weather; onClose: ()
         )}
 
         <div className="mt-5 pt-4 border-t border-line grid grid-cols-2 gap-3">
-          <WeatherTile icon={<Icon.Sun size={16} />} label="UV index" value={`${weather.uvIndex} · ${uvLabel(weather.uvIndex)}`} />
+          <WeatherTile icon={<span aria-hidden>☀️</span>} label="UV index" value={`${weather.uvIndex} · ${uvLabel(weather.uvIndex)}`} />
           <WeatherTile icon={<span aria-hidden>💧</span>} label="Humidity" value={`${weather.humidity}%`} />
           <WeatherTile
             icon={<span aria-hidden>💨</span>}
@@ -591,8 +591,8 @@ function KioskWeatherModal({ weather, onClose }: { weather: Weather; onClose: ()
             value={`${weather.windMph} mph ${compassLabel(weather.windDirection)}`}
           />
           <WeatherTile icon={<span aria-hidden>🌡️</span>} label="Feels like" value={`${weather.feelsLikeF}°`} />
-          <WeatherTile icon={<Icon.Sun size={16} />} label="Sunrise" value={weather.sunrise} />
-          <WeatherTile icon={<Icon.Moon size={16} />} label="Sunset" value={weather.sunset} />
+          <WeatherTile icon={<span aria-hidden>🌅</span>} label="Sunrise" value={weather.sunrise} />
+          <WeatherTile icon={<span aria-hidden>🌇</span>} label="Sunset" value={weather.sunset} />
         </div>
       </Card>
     </div>
