@@ -319,6 +319,8 @@ export type Database = {
       top_up_queue: { Args: { p_chore: string }; Returns: number };
       materialize_schedule: { Args: { p_chore: string }; Returns: number };
       complete_turn: { Args: { p_turn: string; p_note?: string | null }; Returns: ChoreTurn };
+      skip_turn: { Args: { p_turn: string; p_note?: string | null }; Returns: ChoreTurn };
+      undo_turn: { Args: { p_turn: string }; Returns: ChoreTurn };
       flag_on_demand: { Args: { p_chore: string }; Returns: ChoreTurn };
       accept_swap: { Args: { p_swap: string }; Returns: undefined };
       is_household_admin: { Args: Record<PropertyKey, never>; Returns: boolean };

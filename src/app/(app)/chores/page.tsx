@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { getChores, getUpNext, getChoreStats, getRecentlyDone, requireModule } from '@/lib/data';
-import { TurnRow } from '@/components/turn-card';
+import { TurnRow, RecentlyDoneRow } from '@/components/turn-card';
 import { Card, SectionHeader, Initials, Pill, cx } from '@/components/ui';
 import { describeCadence, upcomingRotation } from '@/lib/rotation';
 import { formatInTimeZone } from '@/lib/timezone';
@@ -144,25 +144,21 @@ export default async function ChoresPage() {
           <SectionHeader title="Recently done" />
           <Card className="divide-y divide-[var(--border-subtle)]">
             {recent.map((t) => (
-              <div key={t.id} className="flex items-center gap-3 px-4 py-2.5">
-                <span className="text-lg w-6 text-center" aria-hidden>{t.chore.emoji}</span>
-                <span className="t-body-md text-ink flex-1 min-w-0 truncate">
-                  {t.chore.name}
-                </span>
-                <Initials
-                  initials={t.assignee.initials}
-                  color={t.assignee.color}
-                  size="sm"
-                />
-                <span className="t-body-sm text-ink-muted tabular-nums w-14 text-right">
-                  {t.completed_at
+              <RecentlyDoneRow
+                key={t.id}
+                turnId={t.id}
+                emoji={t.chore.emoji}
+                choreName={t.chore.name}
+                assignee={{ initials: t.assignee.initials, color: t.assignee.color }}
+                dateLabel={
+                  t.completed_at
                     ? formatInTimeZone(t.completed_at, household.timezone, {
                         month: 'short',
                         day: 'numeric',
                       })
-                    : ''}
-                </span>
-              </div>
+                    : ''
+                }
+              />
             ))}
           </Card>
         </section>

@@ -87,6 +87,56 @@ export async function completeTurn(turnId: string, note?: string): Promise<Actio
   return { ok: true };
 }
 
+/** Marks the current turn skipped (out of town, etc.) and moves the baton on. */
+export async function skipTurn(turnId: string, note?: string): Promise<ActionResult> {
+  const supabase = await createClient();
+
+  const { data: turn } = await supabase
+    .from('chore_turns')
+    .select('id, chore_id, assignee_id, household_id, chore:chores(name, emoji)')
+    .eq('id', turnId)
+    .single<{ id: string; chore_id: string; assignee_id: string; household_id: string; chore: { name: string; emoji: string } }>();
+
+  const { error } = await supabase.rpc('skip_turn', {
+    p_turn: turnId,
+    p_note: note ?? null,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  if (turn) {
+    const { data: next } = await supabase
+      .from('chore_turns')
+      .select('assignee_id')
+      .eq('chore_id', turn.chore_id)
+      .eq('status', 'pending')
+      .order('turn_number')
+      .limit(1)
+      .single<{ assignee_id: string }>();
+
+    if (next && next.assignee_id !== turn.assignee_id) {
+      await notifyProfiles([next.assignee_id], {
+        title: `${turn.chore.emoji} You're up: ${turn.chore.name}`,
+        body: 'The rotation just moved to you.',
+        url: '/',
+        tag: `chore-${turn.chore_id}`,
+      });
+    }
+  }
+
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+/** Reopens a turn that was marked done or skipped by mistake. */
+export async function undoTurn(turnId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('undo_turn', { p_turn: turnId });
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
 /** "The dishwasher is full" / "the trash needs to go out." */
 export async function flagChore(choreId: string): Promise<ActionResult> {
   const supabase = await createClient();

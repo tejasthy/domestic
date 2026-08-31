@@ -53,6 +53,9 @@ echo "  ok  pgcrypto in extensions + app role created (as in Supabase)"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0013_split_adjustment.sql" && echo "  ok  0013_split_adjustment.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0014_expense_items.sql" && echo "  ok  0014_expense_items.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0015_lock_kiosk_rpcs_from_anon.sql" && echo "  ok  0015_lock_kiosk_rpcs_from_anon.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0016_kiosk_dismiss_message.sql" && echo "  ok  0016_kiosk_dismiss_message.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0017_update_expense.sql" && echo "  ok  0017_update_expense.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0018_skip_and_undo_turn.sql" && echo "  ok  0018_skip_and_undo_turn.sql"
 
 # Only the auth-schema grants are left to do; everything in `public` came from
 # the default privileges set above, so 0004's column-level revoke still stands.
@@ -93,6 +96,7 @@ echo "── chore admin, recurring expenses, AI config ────────
 "${PSQL[@]}" < "$HERE/ai_config.sql"
 "${PSQL[@]}" < "$HERE/expense_items.sql"
 "${PSQL[@]}" < "$HERE/update_expense.sql"
+"${PSQL[@]}" < "$HERE/skip_and_undo_turn.sql"
 
 echo
 echo "All database checks passed."
