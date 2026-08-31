@@ -24,6 +24,7 @@ export const metadata: Metadata = {
   title: 'Domestic',
   description: 'Chores and money for 526 Detroit St.',
   manifest: '/manifest.webmanifest',
+  icons: { apple: '/icons/apple-touch-icon.png' },
   appleWebApp: {
     capable: true,
     title: 'Domestic',

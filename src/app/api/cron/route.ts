@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const report = { materialized: 0, queued: 0, notified: 0, missed: 0 };
+  const report = { materialized: 0, queued: 0, notified: 0, missed: 0, recurringPosted: 0 };
 
   const { data: chores } = await admin
     .from('chores')
@@ -40,6 +40,41 @@ export async function GET(request: NextRequest) {
       const { data } = await admin.rpc('top_up_queue', { p_chore: chore.id });
       report.queued += Number(data ?? 0);
     }
+  }
+
+  // Rent, subscriptions, etc — post straight to the ledger, then notify
+  // participants exactly like addExpense does for a one-off expense. The
+  // plpgsql side stays limited to the atomic insert + activity_log entry;
+  // web-push only exists here in TypeScript.
+  const { data: posted } = await admin.rpc('post_due_recurring_expenses');
+  report.recurringPosted = posted?.length ?? 0;
+
+  for (const expense of posted ?? []) {
+    const [{ data: splits }, { data: payer }] = await Promise.all([
+      admin
+        .from('expense_splits')
+        .select('profile_id, owed_cents')
+        .eq('expense_id', expense.id)
+        .returns<{ profile_id: string; owed_cents: number }[]>(),
+      admin
+        .from('profiles')
+        .select('full_name')
+        .eq('id', expense.paid_by)
+        .single<{ full_name: string }>(),
+    ]);
+
+    await Promise.all(
+      (splits ?? [])
+        .filter((s) => s.profile_id !== expense.paid_by)
+        .map((s) =>
+          notifyProfiles([s.profile_id], {
+            title: `${expense.description} — $${(expense.amount_cents / 100).toFixed(2)}`,
+            body: `${payer?.full_name ?? 'Someone'} paid. Your share is $${(s.owed_cents / 100).toFixed(2)}.`,
+            url: '/expenses',
+            tag: `expense-${expense.id}`,
+          }),
+        ),
+    );
   }
 
   // Anything scheduled that is more than a week past due is not getting done —

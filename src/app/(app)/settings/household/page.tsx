@@ -1,9 +1,10 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getSession, getInvites, getKioskDevices } from '@/lib/data';
+import { getAiConfigSummary } from '@/lib/household-actions';
 import { MODULES } from '@/lib/modules';
 import { Card, SectionHeader, Initials, Pill } from '@/components/ui';
-import { MemberRow, InviteList, NewInvite, ModuleToggles, KioskDevices } from './admin';
+import { MemberRow, InviteList, NewInvite, ModuleToggles, KioskDevices, AiConfig } from './admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +45,11 @@ export default async function HouseholdSettingsPage() {
     );
   }
 
-  const [invites, kiosks] = await Promise.all([getInvites(), getKioskDevices()]);
+  const [invites, kiosks, aiConfig] = await Promise.all([
+    getInvites(),
+    getKioskDevices(),
+    getAiConfigSummary(),
+  ]);
   const openInvites = invites.filter(
     (i) =>
       !i.revoked_at &&
@@ -112,6 +117,11 @@ export default async function HouseholdSettingsPage() {
           }))}
           enabled={modules}
         />
+      </section>
+
+      <section>
+        <SectionHeader title="Receipt scanning" />
+        <AiConfig summary={aiConfig} />
       </section>
 
       {modules.includes('kiosk') && (

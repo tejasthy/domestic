@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { getChores, getUpNext, getChoreStats, getRecentlyDone, requireModule } from '@/lib/data';
 import { TurnRow } from '@/components/turn-card';
@@ -30,7 +31,14 @@ export default async function ChoresPage() {
   return (
     <div className="space-y-7 max-w-2xl">
       <header>
-        <h1 className="t-display-lg text-ink">Chores</h1>
+        <div className="flex items-baseline justify-between gap-3">
+          <h1 className="t-display-lg text-ink">Chores</h1>
+          {me.is_admin && (
+            <Link href="/chores/manage" className="t-body-sm text-accent font-medium">
+              Manage chores →
+            </Link>
+          )}
+        </div>
         <p className="t-body-md text-ink-muted mt-0.5">
           Same rotation as the chart on the fridge — it just counts for you now.
         </p>

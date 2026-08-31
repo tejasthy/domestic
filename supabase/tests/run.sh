@@ -80,4 +80,10 @@ echo "── row level security ────────────────
 "${PSQL[@]}" < "$HERE/intro.sql"
 
 echo
+echo "── chore admin, recurring expenses, AI config ─────────"
+"${PSQL[@]}" < "$HERE/chore_admin.sql"
+"${PSQL[@]}" < "$HERE/recurring_expenses.sql"
+"${PSQL[@]}" < "$HERE/ai_config.sql"
+
+echo
 echo "All database checks passed."

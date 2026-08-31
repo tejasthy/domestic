@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import type {
   ActivityEntry, Balance, Chore, Expense, ExpenseSplit, HouseholdInvite,
-  Profile, Settlement, TurnCard,
+  Profile, RecurringExpense, RecurringExpenseParticipant, Settlement, TurnCard,
 } from '@/lib/types';
 import { DEFAULT_MODULES, type ModuleKey } from '@/lib/modules';
 
@@ -151,6 +151,30 @@ export async function getExpenses(limit = 50): Promise<ExpenseWithSplits[]> {
     .limit(limit)
     .returns<ExpenseWithSplits[]>();
   return data ?? [];
+}
+
+export type RecurringExpenseWithParticipants = RecurringExpense & {
+  participants: RecurringExpenseParticipant[];
+};
+
+export async function getRecurringExpenses(): Promise<RecurringExpenseWithParticipants[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('recurring_expenses')
+    .select('*, participants:recurring_expense_participants ( recurring_expense_id, profile_id, owed_cents, weight )')
+    .order('next_run_on', { ascending: true })
+    .returns<RecurringExpenseWithParticipants[]>();
+  return data ?? [];
+}
+
+export async function getRecurringExpense(id: string): Promise<RecurringExpenseWithParticipants | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('recurring_expenses')
+    .select('*, participants:recurring_expense_participants ( recurring_expense_id, profile_id, owed_cents, weight )')
+    .eq('id', id)
+    .single<RecurringExpenseWithParticipants>();
+  return data ?? null;
 }
 
 export async function getBalances(): Promise<Record<string, number>> {

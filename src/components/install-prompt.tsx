@@ -15,7 +15,12 @@ function detectPlatform(): Platform {
   if (standalone) return 'installed';
 
   const ua = navigator.userAgent;
-  if (/iP(hone|ad|od)/.test(ua)) return 'ios';
+  // iPadOS 13+ Safari sends a Macintosh UA with no "iPad" token, so an iPad
+  // would otherwise fall through to 'desktop' — and since Safari never fires
+  // beforeinstallprompt, the banner would never show at all. A real Mac
+  // reports 0 touch points; an iPad reports several.
+  const isIpadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  if (/iP(hone|ad|od)/.test(ua) || isIpadOS) return 'ios';
   if (/Android/.test(ua)) return 'android';
   return 'desktop';
 }
