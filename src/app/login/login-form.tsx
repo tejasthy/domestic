@@ -16,6 +16,13 @@ function GoogleMark() {
   );
 }
 
+/**
+ * Magic links need working SMTP. Supabase's built-in sender allows roughly two
+ * emails an hour, which looks broken rather than rate-limited, so the email
+ * path stays off until someone configures a real sender.
+ */
+const MAGIC_LINK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_MAGIC_LINK === 'true';
+
 export function LoginForm() {
   const [state, action, pending] = useActionState(sendMagicLink, null);
   const [showEmail, setShowEmail] = useState(false);
@@ -68,7 +75,7 @@ export function LoginForm() {
 
       {oauthError && <p className="t-body-sm text-danger">{oauthError}</p>}
 
-      {!showEmail ? (
+      {!MAGIC_LINK_ENABLED ? null : !showEmail ? (
         <button
           type="button"
           onClick={() => setShowEmail(true)}

@@ -12,6 +12,14 @@ export type ActionResult = { ok: true } | { ok: false; error: string };
 /* ------------------------------------------------------------------- auth */
 
 export async function sendMagicLink(_prev: unknown, formData: FormData): Promise<ActionResult> {
+  // Hiding the form is not access control; refuse here too.
+  if (process.env.NEXT_PUBLIC_ENABLE_MAGIC_LINK !== 'true') {
+    return {
+      ok: false,
+      error: 'Email sign-in is off for this house. Use Continue with Google.',
+    };
+  }
+
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
   if (!z.string().email().safeParse(email).success) {
     return { ok: false, error: 'That does not look like an email address.' };
