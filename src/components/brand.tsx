@@ -136,4 +136,21 @@ export const Icon = {
       <path d="M5 8c1.7-2.3 4.3-3.5 7-3.5 4.4 0 8 3.4 8 7.5s-3.6 7.5-8 7.5c-3 0-5.7-1.6-7-4" />
     </svg>
   ),
+  Sun: ({ size = 24, className }: IconProps) => (
+    <svg {...base(size, className)}>
+      <circle cx="12" cy="12" r="4.5" />
+      <path d="M12 2.5v3M12 18.5v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2.5 12h3M18.5 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" />
+    </svg>
+  ),
+  Moon: ({ size = 24, className }: IconProps) => (
+    <svg {...base(size, className)}>
+      <path d="M20 13.5A8.5 8.5 0 1 1 10.5 4a7 7 0 0 0 9.5 9.5Z" />
+    </svg>
+  ),
+  Monitor: ({ size = 24, className }: IconProps) => (
+    <svg {...base(size, className)}>
+      <rect x="3" y="4.5" width="18" height="12" rx="1.5" />
+      <path d="M8.5 20h7M12 16.5V20" />
+    </svg>
+  ),
 };

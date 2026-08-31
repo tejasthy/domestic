@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Oswald, IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
+import { cookies } from 'next/headers';
+import { THEME_COOKIE, parseThemeCookie } from '@/lib/theme';
 import './globals.css';
 
 const oswald = Oswald({
@@ -44,11 +46,14 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const theme = parseThemeCookie((await cookies()).get(THEME_COOKIE)?.value);
+
   return (
     <html
       lang="en"
       className={`${oswald.variable} ${plexSans.variable} ${plexMono.variable}`}
+      data-theme={theme === 'system' ? undefined : theme}
     >
       <body>{children}</body>
     </html>

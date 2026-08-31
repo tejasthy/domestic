@@ -1,7 +1,10 @@
+import { cookies } from 'next/headers';
 import { kioskHousehold, loadKiosk, UNDOABLE_STATUS } from '@/lib/kiosk';
 import { getWeather } from '@/lib/weather';
 import { Logo } from '@/components/brand';
 import { Card, Initials, Pill, cx } from '@/components/ui';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { THEME_COOKIE, parseThemeCookie } from '@/lib/theme';
 import { formatCents } from '@/lib/money';
 import { bucketFor, describeCadence } from '@/lib/rotation';
 import { formatInTimeZone } from '@/lib/timezone';
@@ -60,6 +63,8 @@ export default async function KioskPage({
       ? await getWeather(household.latitude, household.longitude)
       : null;
 
+  const theme = parseThemeCookie((await cookies()).get(THEME_COOKIE)?.value);
+
   // An on-demand chore's queued-but-unflagged turn (due_at null, bucket
   // 'anytime') is just holding a place in line, not yet needing doing — same
   // rule the main dashboard uses for "You're up". It only belongs in "Up now"
@@ -85,6 +90,7 @@ export default async function KioskPage({
             </div>
           </div>
           <div className="flex items-center gap-6">
+            <ThemeToggle current={theme} compact />
             {weather && <KioskWeather weather={weather} />}
             <KioskClock timezone={household.timezone} />
           </div>
