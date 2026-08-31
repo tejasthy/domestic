@@ -95,8 +95,15 @@ create trigger on_auth_user_created
 
 -- Backfill invites for anyone already seeded, so the roster is complete even
 -- if the household was set up before this migration existed.
+-- Guarded by NOT EXISTS rather than ON CONFLICT: 0004 drops the email primary
+-- key, so by the time this file is re-applied there is no unique constraint on
+-- email for a conflict target to reference.
 insert into household_invites (email, household_id, full_name, initials, color, is_admin)
 select p.email, p.household_id, p.full_name, p.initials, p.color, p.is_admin
 from profiles p
-where p.email is not null and p.household_id is not null
-on conflict (email) do nothing;
+where p.email is not null
+  and p.household_id is not null
+  and not exists (
+    select 1 from household_invites hi
+    where lower(hi.email) = lower(p.email)
+  );

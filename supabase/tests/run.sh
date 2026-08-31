@@ -47,6 +47,13 @@ SQL
 echo "  ok  auth schema readable by the app role"
 
 echo
+echo "── idempotency: apply every migration again ───────────"
+for f in "$REPO"/supabase/migrations/*.sql; do
+  "${PSQL[@]}" < "$f" >/dev/null || { echo "  FAIL re-applying $(basename "$f")"; exit 1; }
+done
+echo "  ok  migrations are safe to re-run"
+
+echo
 echo "── rotation engine & money ────────────────────────────"
 "${PSQL[@]}" < "$HERE/smoke.sql"
 

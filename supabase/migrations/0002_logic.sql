@@ -314,50 +314,64 @@ alter table push_subscriptions enable row level security;
 alter table kiosk_devices     enable row level security;
 alter table activity_log      enable row level security;
 
+drop policy if exists hh_read on households;
 create policy hh_read on households for select
   using (id = current_household_id());
 
+drop policy if exists pr_read on profiles;
 create policy pr_read on profiles for select
   using (household_id = current_household_id() or id = auth.uid());
+drop policy if exists pr_write on profiles;
 create policy pr_write on profiles for update
   using (id = auth.uid()) with check (id = auth.uid());
 
+drop policy if exists ch_all on chores;
 create policy ch_all on chores for all
   using (is_household_member(household_id))
   with check (is_household_member(household_id));
 
+drop policy if exists rot_all on chore_rotation;
 create policy rot_all on chore_rotation for all
   using (exists (select 1 from chores c where c.id = chore_id and is_household_member(c.household_id)))
   with check (exists (select 1 from chores c where c.id = chore_id and is_household_member(c.household_id)));
 
+drop policy if exists turn_all on chore_turns;
 create policy turn_all on chore_turns for all
   using (is_household_member(household_id))
   with check (is_household_member(household_id));
 
+drop policy if exists swap_all on chore_swaps;
 create policy swap_all on chore_swaps for all
   using (exists (select 1 from chore_turns t where t.id = turn_id and is_household_member(t.household_id)))
   with check (exists (select 1 from chore_turns t where t.id = turn_id and is_household_member(t.household_id)));
 
+drop policy if exists exp_all on expenses;
 create policy exp_all on expenses for all
   using (is_household_member(household_id))
   with check (is_household_member(household_id));
 
+drop policy if exists split_all on expense_splits;
 create policy split_all on expense_splits for all
   using (exists (select 1 from expenses e where e.id = expense_id and is_household_member(e.household_id)))
   with check (exists (select 1 from expenses e where e.id = expense_id and is_household_member(e.household_id)));
 
+drop policy if exists settle_all on settlements;
 create policy settle_all on settlements for all
   using (is_household_member(household_id))
   with check (is_household_member(household_id));
 
+drop policy if exists push_own on push_subscriptions;
 create policy push_own on push_subscriptions for all
   using (profile_id = auth.uid()) with check (profile_id = auth.uid());
 
+drop policy if exists kiosk_read on kiosk_devices;
 create policy kiosk_read on kiosk_devices for select
   using (is_household_member(household_id));
 
+drop policy if exists act_read on activity_log;
 create policy act_read on activity_log for select
   using (is_household_member(household_id));
+drop policy if exists act_insert on activity_log;
 create policy act_insert on activity_log for insert
   with check (is_household_member(household_id));
 
