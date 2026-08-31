@@ -1,4 +1,4 @@
-import { kioskHousehold, loadKiosk } from '@/lib/kiosk';
+import { kioskHousehold, loadKiosk, UNDOABLE_STATUS } from '@/lib/kiosk';
 import { getWeather } from '@/lib/weather';
 import { Logo } from '@/components/brand';
 import { Card, Initials, Pill, cx } from '@/components/ui';
@@ -8,6 +8,7 @@ import { formatInTimeZone } from '@/lib/timezone';
 import {
   KioskClock, AutoRefresh, ActingAsProvider, ActingAsBar,
   KioskTurnCard, KioskFlagButton, KioskSwapRow, KioskChoreToggle, KioskMessageDismiss,
+  KioskActivityRow, KioskWeather,
 } from './kiosk-client';
 
 export const dynamic = 'force-dynamic';
@@ -46,7 +47,7 @@ export default async function KioskPage({
     );
   }
 
-  const { household, members, chores, upNext, balances, activity, modules, swaps, messages } = data;
+  const { household, members, chores, upNext, balances, activity, turnStatus, modules, swaps, messages } = data;
   const showChores = modules.includes('chores');
   const showMoney = modules.includes('expenses');
   const byId = new Map(members.map((m) => [m.id, m]));
@@ -84,14 +85,7 @@ export default async function KioskPage({
             </div>
           </div>
           <div className="flex items-center gap-6">
-            {weather && (
-              <div className="text-right">
-                <p className="t-display-lg text-ink leading-none">
-                  <span aria-hidden>{weather.emoji}</span> {weather.tempF}°
-                </p>
-                <p className="t-body-md text-ink-muted mt-1">{weather.label}</p>
-              </div>
-            )}
+            {weather && <KioskWeather weather={weather} />}
             <KioskClock timezone={household.timezone} />
           </div>
         </header>
@@ -275,23 +269,21 @@ export default async function KioskPage({
                 )}
                 {activity.map((a) => {
                   const actor = a.actor_id ? byId.get(a.actor_id) : null;
+                  const turnId = typeof a.metadata.turn_id === 'string' ? a.metadata.turn_id : null;
+                  const undoable =
+                    turnId !== null && turnStatus[turnId] === UNDOABLE_STATUS[a.verb];
                   return (
-                    <div key={a.id} className="flex items-start gap-3 px-4 py-3">
-                      {actor ? (
-                        <Initials initials={actor.initials} color={actor.color} size="sm" />
-                      ) : (
-                        <span className="w-6" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="t-body-md text-ink leading-snug">{a.summary}</p>
-                        <p className="t-caption text-ink-muted mt-0.5">
-                          {formatInTimeZone(a.created_at, household.timezone, {
-                            hour: 'numeric',
-                            minute: '2-digit',
-                          })}
-                        </p>
-                      </div>
-                    </div>
+                    <KioskActivityRow
+                      key={a.id}
+                      turnId={turnId}
+                      summary={a.summary}
+                      undoable={undoable}
+                      actor={actor ? { initials: actor.initials, color: actor.color } : null}
+                      timeLabel={formatInTimeZone(a.created_at, household.timezone, {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    />
                   );
                 })}
               </Card>

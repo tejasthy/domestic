@@ -50,6 +50,13 @@ export type KioskSwap = {
   requester_name: string;
 };
 
+/** Verb -> the chore_turns status that makes its "Undo" meaningful (mirrors
+ * the Activity page's own copy of this table). */
+export const UNDOABLE_STATUS: Record<string, string> = {
+  completed_chore: 'done',
+  skipped_chore: 'skipped',
+};
+
 export type KioskData = {
   household: {
     id: string;
@@ -63,6 +70,7 @@ export type KioskData = {
   upNext: TurnCard[];
   balances: Record<string, number>;
   activity: ActivityEntry[];
+  turnStatus: Record<string, string>;
   modules: string[];
   swaps: KioskSwap[];
   messages: KioskMessage[];
@@ -132,6 +140,21 @@ export async function loadKiosk(householdId: string): Promise<KioskData | null> 
     return true;
   });
 
+  // Batch-fetch the current status of every turn a completion/skip entry in
+  // "Lately" points at, so Undo only shows where it would actually do
+  // something — same check the Activity page does with its own session client.
+  const turnIds = [...new Set(
+    (activity ?? [])
+      .filter((a) => a.verb in UNDOABLE_STATUS)
+      .map((a) => a.metadata.turn_id)
+      .filter((id): id is string => typeof id === 'string'),
+  )];
+  const { data: turnRows } = turnIds.length
+    ? await admin.from('chore_turns').select('id, status').in('id', turnIds)
+      .returns<{ id: string; status: string }[]>()
+    : { data: [] as { id: string; status: string }[] };
+  const turnStatus = Object.fromEntries((turnRows ?? []).map((t) => [t.id, t.status]));
+
   return {
     household,
     members: members ?? [],
@@ -139,6 +162,7 @@ export async function loadKiosk(householdId: string): Promise<KioskData | null> 
     upNext,
     balances: Object.fromEntries((balances ?? []).map((b) => [b.profile_id, b.net_cents])),
     activity: activity ?? [],
+    turnStatus,
     modules: (modules as string[] | null) ?? [],
     swaps: (swaps ?? []).map((s) => ({
       id: s.id,
