@@ -455,42 +455,157 @@ function compassLabel(degrees: number): string {
   return COMPASS[Math.round(degrees / 22.5) % 16];
 }
 
-/** Tap the header's weather readout to drop down feels-like/humidity/wind/
- * high-low — everything getWeather() already fetches but the collapsed view
- * has no room for. Purely local UI state; nothing here touches the server. */
+function uvLabel(uvIndex: number): string {
+  if (uvIndex >= 11) return 'Extreme';
+  if (uvIndex >= 8) return 'Very high';
+  if (uvIndex >= 6) return 'High';
+  if (uvIndex >= 3) return 'Moderate';
+  return 'Low';
+}
+
+/** Tap the header's weather readout to open a full dashboard — hourly and
+ * 7-day forecasts plus everything getWeather() fetches but the collapsed
+ * header has no room for. Purely local UI state; nothing here touches the
+ * server. */
 export function KioskWeather({ weather }: { weather: Weather }) {
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
 
   return (
-    <button
-      type="button"
-      onClick={() => setExpanded((v) => !v)}
-      aria-expanded={expanded}
-      aria-label={expanded ? 'Hide detailed weather' : 'Show detailed weather'}
-      className="text-right rounded-lg -m-2 p-2 transition-colors duration-[120ms] hover:bg-hover active:bg-sunken"
-    >
-      <p className="t-display-lg text-ink leading-none">
-        <span aria-hidden>{weather.emoji}</span> {weather.tempF}°
-      </p>
-      <p className="t-body-md text-ink-muted mt-1">{weather.label}</p>
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        aria-label="Show detailed weather"
+        className="text-right rounded-lg -m-2 p-2 transition-colors duration-[120ms] hover:bg-hover active:bg-sunken"
+      >
+        <p className="t-display-lg text-ink leading-none">
+          <span aria-hidden>{weather.emoji}</span> {weather.tempF}°
+        </p>
+        <p className="t-body-md text-ink-muted mt-1">{weather.label}</p>
+      </button>
 
-      {expanded && (
-        <div className="mt-3 pt-3 border-t border-line grid grid-cols-2 gap-x-6 gap-y-2 text-left">
-          <WeatherDetail label="Feels like" value={`${weather.feelsLikeF}°`} />
-          <WeatherDetail label="High / low" value={`${weather.highF}° / ${weather.lowF}°`} />
-          <WeatherDetail label="Humidity" value={`${weather.humidity}%`} />
-          <WeatherDetail label="Wind" value={`${weather.windMph} mph ${compassLabel(weather.windDirection)}`} />
-        </div>
-      )}
-    </button>
+      {open && <KioskWeatherModal weather={weather} onClose={() => setOpen(false)} />}
+    </>
   );
 }
 
-function WeatherDetail({ label, value }: { label: string; value: string }) {
+function KioskWeatherModal({ weather, onClose }: { weather: Weather; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const dayLows = weather.daily.map((d) => d.lowF);
+  const dayHighs = weather.daily.map((d) => d.highF);
+  const weekMin = dayLows.length ? Math.min(...dayLows) : 0;
+  const weekMax = dayHighs.length ? Math.max(...dayHighs) : 1;
+  const weekSpan = Math.max(1, weekMax - weekMin);
+
   return (
-    <div>
-      <p className="t-caption text-ink-muted">{label}</p>
-      <p className="t-body-md font-medium text-ink tabular-nums">{value}</p>
+    <div
+      className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4"
+      onClick={onClose}
+      role="presentation"
+    >
+      <Card
+        className="w-full max-w-md max-h-[85vh] overflow-y-auto p-5 shadow-lg text-left"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Detailed weather"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="t-display-lg text-ink leading-none">
+              <span aria-hidden>{weather.emoji}</span> {weather.tempF}°
+            </p>
+            <p className="t-body-md text-ink-muted mt-1">
+              {weather.label} · H:{weather.highF}° L:{weather.lowF}°
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close detailed weather"
+            className="w-8 h-8 grid place-items-center rounded-pill text-ink-muted hover:bg-hover shrink-0"
+          >
+            <Icon.Close size={18} />
+          </button>
+        </div>
+
+        {weather.hourly.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-line">
+            <p className="t-label text-ink-muted mb-3">Hourly forecast</p>
+            <div className="flex gap-4 overflow-x-auto pb-1 -mx-1 px-1">
+              {weather.hourly.map((h, i) => (
+                <div key={i} className="flex flex-col items-center gap-1.5 shrink-0 w-12">
+                  <p className="t-caption text-ink-muted">{h.hourLabel}</p>
+                  <span className="text-xl" aria-hidden>{h.emoji}</span>
+                  <p className="t-caption text-accent h-4">{h.precipChance > 0 ? `${h.precipChance}%` : ''}</p>
+                  <p className="t-body-sm font-medium text-ink tabular-nums">{h.tempF}°</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {weather.daily.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-line">
+            <p className="t-label text-ink-muted mb-2">7-day forecast</p>
+            <div className="divide-y divide-[var(--border-subtle)]">
+              {weather.daily.map((d, i) => {
+                const leftPct = ((d.lowF - weekMin) / weekSpan) * 100;
+                const widthPct = ((d.highF - d.lowF) / weekSpan) * 100;
+                return (
+                  <div key={i} className="flex items-center gap-3 py-2.5">
+                    <p className="t-body-sm font-medium text-ink w-10 shrink-0">{d.weekday}</p>
+                    <span className="text-lg w-6 text-center shrink-0" aria-hidden>{d.emoji}</span>
+                    <p className="t-caption text-accent w-9 shrink-0 text-right">
+                      {d.precipChance > 0 ? `${d.precipChance}%` : ''}
+                    </p>
+                    <p className="t-body-sm text-ink-muted w-7 shrink-0 text-right tabular-nums">{d.lowF}°</p>
+                    <div className="flex-1 h-1 rounded-pill bg-sunken relative">
+                      <div
+                        className="absolute inset-y-0 rounded-pill bg-accent"
+                        style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                      />
+                    </div>
+                    <p className="t-body-sm font-medium text-ink w-7 shrink-0 text-right tabular-nums">{d.highF}°</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="mt-5 pt-4 border-t border-line grid grid-cols-2 gap-3">
+          <WeatherTile icon={<Icon.Sun size={16} />} label="UV index" value={`${weather.uvIndex} · ${uvLabel(weather.uvIndex)}`} />
+          <WeatherTile icon={<span aria-hidden>💧</span>} label="Humidity" value={`${weather.humidity}%`} />
+          <WeatherTile
+            icon={<span aria-hidden>💨</span>}
+            label="Wind"
+            value={`${weather.windMph} mph ${compassLabel(weather.windDirection)}`}
+          />
+          <WeatherTile icon={<span aria-hidden>🌡️</span>} label="Feels like" value={`${weather.feelsLikeF}°`} />
+          <WeatherTile icon={<Icon.Sun size={16} />} label="Sunrise" value={weather.sunrise} />
+          <WeatherTile icon={<Icon.Moon size={16} />} label="Sunset" value={weather.sunset} />
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function WeatherTile({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-sunken p-3">
+      <p className="t-caption text-ink-muted flex items-center gap-1.5">
+        {icon} {label}
+      </p>
+      <p className="t-title-md text-ink mt-1 tabular-nums">{value}</p>
     </div>
   );
 }
