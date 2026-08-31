@@ -240,6 +240,66 @@ export function RecentlyDoneRow({
   );
 }
 
+/** One row of the Activity feed. Undoable when it's a completion or a skip
+ * and the turn is still sitting in the state that entry put it in — if it's
+ * moved on since (undone already, or completed again), the button is hidden
+ * rather than offering an undo that would act on a different turn than the
+ * one this line is describing. */
+export function ActivityRow({
+  turnId,
+  summary,
+  timeLabel,
+  actor,
+  undoable,
+}: {
+  turnId: string | null;
+  summary: string;
+  timeLabel: string;
+  actor: { initials: string; color: string } | null;
+  undoable: boolean;
+}) {
+  const [pending, start] = useTransition();
+  const [undone, setUndone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="flex items-start gap-3 px-4 py-3">
+      {actor ? (
+        <Initials initials={actor.initials} color={actor.color} size="sm" />
+      ) : (
+        <span className="w-7 h-7 shrink-0" aria-hidden />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className={cx('t-body-md leading-snug', undone ? 'text-ink-muted' : 'text-ink')}>
+          {undone ? 'Back on the board.' : summary}
+        </p>
+        <div className="flex items-center gap-2 mt-0.5">
+          <p className="t-caption text-ink-muted">{timeLabel}</p>
+          {error && <p className="t-caption text-danger">{error}</p>}
+        </div>
+      </div>
+      {undoable && !undone && turnId && (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            setError(null);
+            start(async () => {
+              const res = await undoTurn(turnId);
+              if (res.ok) setUndone(true);
+              else setError(res.error);
+            });
+          }}
+          aria-label={`Undo: ${summary}`}
+          className="t-body-sm font-medium text-accent shrink-0 disabled:opacity-50"
+        >
+          Undo
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** "Dishwasher's full" — puts an on-demand chore on someone's plate now. */
 export function FlagButton({
   choreId,
