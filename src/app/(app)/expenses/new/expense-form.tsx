@@ -2,11 +2,12 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { addExpense } from '@/lib/actions';
+import { addExpense, updateExpense } from '@/lib/actions';
 import { Button, Card, Field, Initials, Input, Select, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
 import { splitEqual, splitByWeight, splitByAdjustment, formatCents, parseDollars } from '@/lib/money';
 import type { Profile, SplitKind, ExpenseItemKind } from '@/lib/types';
+import type { ExpenseWithSplits } from '@/lib/data';
 
 const CATEGORIES = [
   'groceries', 'household', 'utilities', 'dining',
@@ -114,23 +115,65 @@ function itemIsValid(item: ItemDraft): boolean {
   );
 }
 
-export function ExpenseForm({ me, members }: { me: Profile; members: Profile[] }) {
+/** Rebuilds this form's item drafts from an itemized expense being edited. */
+function itemDraftsFromExpense(expense: ExpenseWithSplits): ItemDraft[] {
+  return expense.items.map((item) => ({
+    key: item.id,
+    name: item.name,
+    amount: (item.amount_cents / 100).toFixed(2),
+    kind: item.kind,
+    splitKind: item.split_kind,
+    assignees: item.item_splits.map((s) => s.profile_id),
+    weights: Object.fromEntries(
+      item.item_splits.map((s) => [
+        s.profile_id,
+        item.split_kind === 'exact' ? s.owed_cents / 100 : (s.weight ?? 0),
+      ]),
+    ),
+  }));
+}
+
+type Props =
+  | { mode?: 'create'; me: Profile; members: Profile[]; expense?: undefined }
+  | { mode: 'edit'; me: Profile; members: Profile[]; expense: ExpenseWithSplits };
+
+export function ExpenseForm({ mode = 'create', me, members, expense }: Props) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [submitting, startSubmit] = useTransition();
 
-  const [description, setDescription] = useState('');
-  const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState(me.id);
-  const [spentOn, setSpentOn] = useState(() => new Date().toISOString().slice(0, 10));
-  const [category, setCategory] = useState<string>('general');
-  const [splitKind, setSplitKind] = useState<SplitKind>('equal');
-  const [participants, setParticipants] = useState<string[]>(members.map((m) => m.id));
-  const [weights, setWeights] = useState<Record<string, number>>({});
+  const isItemized = expense?.split_kind === 'itemized';
 
-  // Non-null once a scan reads line items — the form switches into
-  // itemized mode and the whole-expense split picker above is hidden.
-  const [items, setItems] = useState<ItemDraft[] | null>(null);
+  const [description, setDescription] = useState(expense?.description ?? '');
+  const [amount, setAmount] = useState(
+    expense && !isItemized ? (expense.amount_cents / 100).toFixed(2) : '',
+  );
+  const [paidBy, setPaidBy] = useState(expense?.paid_by ?? me.id);
+  const [spentOn, setSpentOn] = useState(
+    () => expense?.spent_on ?? new Date().toISOString().slice(0, 10),
+  );
+  const [category, setCategory] = useState<string>(expense?.category ?? 'general');
+  const [splitKind, setSplitKind] = useState<SplitKind>(
+    expense && !isItemized ? (expense.split_kind as SplitKind) : 'equal',
+  );
+  const [participants, setParticipants] = useState<string[]>(
+    expense && !isItemized ? expense.splits.map((s) => s.profile_id) : members.map((m) => m.id),
+  );
+  const [weights, setWeights] = useState<Record<string, number>>(() => {
+    if (!expense || isItemized) return {};
+    const out: Record<string, number> = {};
+    for (const s of expense.splits) {
+      out[s.profile_id] = expense.split_kind === 'exact' ? s.owed_cents / 100 : (s.weight ?? 0);
+    }
+    return out;
+  });
+
+  // Non-null once a scan reads line items (or an itemized expense is being
+  // edited) — the form switches into itemized mode and the whole-expense
+  // split picker above is hidden.
+  const [items, setItems] = useState<ItemDraft[] | null>(
+    isItemized && expense ? itemDraftsFromExpense(expense) : null,
+  );
 
   const [scanning, setScanning] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
@@ -282,15 +325,17 @@ export function ExpenseForm({ me, members }: { me: Profile; members: Profile[] }
     e.preventDefault();
     setError(null);
     startSubmit(async () => {
-      const res = items
-        ? await addExpense({
+      const input = items
+        ? {
             description,
             paid_by: paidBy,
             spent_on: spentOn,
             category,
             items: items.map((item, i) => buildItemPayload(item, i)),
-          })
-        : await addExpense({
+            receipt_url: expense?.receipt_url ?? undefined,
+            note: expense?.note ?? undefined,
+          }
+        : {
             description,
             amount,
             paid_by: paidBy,
@@ -299,7 +344,10 @@ export function ExpenseForm({ me, members }: { me: Profile; members: Profile[] }
             split_kind: splitKind,
             participants,
             weights: splitKind === 'equal' ? undefined : weights,
-          });
+            receipt_url: expense?.receipt_url ?? undefined,
+            note: expense?.note ?? undefined,
+          };
+      const res = expense ? await updateExpense(expense.id, input) : await addExpense(input);
       if (res.ok) router.push('/expenses');
       else setError(res.error);
     });
@@ -618,7 +666,11 @@ export function ExpenseForm({ me, members }: { me: Profile; members: Profile[] }
         full
         disabled={submitting || (items ? !itemsValid : (participants.length === 0 || cents <= 0))}
       >
-        {submitting ? 'Saving…' : `Add ${displayCents > 0 ? formatCents(displayCents) : 'expense'}`}
+        {submitting
+          ? 'Saving…'
+          : mode === 'edit'
+            ? 'Save changes'
+            : `Add ${displayCents > 0 ? formatCents(displayCents) : 'expense'}`}
       </Button>
     </form>
   );
