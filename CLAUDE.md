@@ -70,7 +70,15 @@ backfill.
 
 Append-only. `create or replace function` cannot add a parameter, even a
 defaulted one — it creates an overload and every existing call becomes
-ambiguous, so `drop function` the old signature first. Column privileges are
-explicit since 0004: a new user-writable column on `profiles` needs its own
-`grant update (col)`, or it is silently read-only in production while working
-fine as superuser locally.
+ambiguous, so `drop function` the old signature first.
+
+Column privileges are explicit since 0004: a new user-writable column on
+`profiles` needs its own `grant update (col)`, or it is silently read-only in
+production while working fine as superuser locally.
+
+pgcrypto lives in the `extensions` schema on Supabase, not `public`, so 0001's
+`create extension if not exists` is a no-op there. Any `security definer`
+function calling `digest`, `gen_random_bytes`, `crypt`, or `hmac` needs `set
+search_path = public, extensions` — `public` alone resolves on stock Postgres
+and fails in production. `supabase/tests/run.sh` now installs pgcrypto into
+`extensions` so the test container reproduces that layout.

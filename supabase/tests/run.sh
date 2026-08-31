@@ -20,13 +20,22 @@ done
 # that protection would silently no-op.
 echo "── role & migrations ──────────────────────────────────"
 "${PSQL[@]}" <<'SQL'
+-- Supabase keeps pgcrypto in `extensions`, not `public`, and it is already
+-- installed when you run your first migration — so 0001's
+-- `create extension if not exists "pgcrypto"` is a no-op there. Reproduce that
+-- here, or a security-definer function pinned to `set search_path = public`
+-- resolves digest()/gen_random_bytes() in the test container and fails in
+-- production.
+create schema if not exists extensions;
+create extension if not exists "pgcrypto" with schema extensions;
+
 create role domestic_app nologin;
 grant usage on schema public to domestic_app;
 alter default privileges in schema public
   grant select, insert, update, delete on tables to domestic_app;
 alter default privileges in schema public grant execute on functions to domestic_app;
 SQL
-echo "  ok  app role created (before migrations, as in Supabase)"
+echo "  ok  pgcrypto in extensions + app role created (as in Supabase)"
 
 "${PSQL[@]}" < "$HERE/auth_shim.sql"                   && echo "  ok  auth shim"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0001_init.sql"  && echo "  ok  0001_init.sql"
@@ -36,6 +45,7 @@ echo "  ok  app role created (before migrations, as in Supabase)"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0005_modules.sql" && echo "  ok  0005_modules.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0006_devices.sql" && echo "  ok  0006_devices.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0007_intro.sql" && echo "  ok  0007_intro.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0008_pgcrypto_schema.sql" && echo "  ok  0008_pgcrypto_schema.sql"
 
 # Only the auth-schema grants are left to do; everything in `public` came from
 # the default privileges set above, so 0004's column-level revoke still stands.
