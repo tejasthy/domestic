@@ -124,4 +124,16 @@ export const Icon = {
       <path d="M6 6l12 12M18 6L6 18" />
     </svg>
   ),
+  SkipForward: ({ size = 24, className }: IconProps) => (
+    <svg {...base(size, className)}>
+      <path d="M6 5.5v13l9.5-6.5z" />
+      <path d="M17.5 5.5v13" />
+    </svg>
+  ),
+  Undo: ({ size = 24, className }: IconProps) => (
+    <svg {...base(size, className)}>
+      <path d="M7 8H5V6" />
+      <path d="M5 8c1.7-2.3 4.3-3.5 7-3.5 4.4 0 8 3.4 8 7.5s-3.6 7.5-8 7.5c-3 0-5.7-1.6-7-4" />
+    </svg>
+  ),
 };

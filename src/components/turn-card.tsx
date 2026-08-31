@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { completeTurn, flagChore, respondToSwap } from '@/lib/actions';
+import { completeTurn, skipTurn, undoTurn, flagChore, respondToSwap } from '@/lib/actions';
 import { Button, Card, Initials, Pill, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
 import { bucketFor } from '@/lib/rotation';
@@ -38,7 +38,8 @@ export function TurnRow({
   className?: string;
 }) {
   const [pending, start] = useTransition();
-  const [done, setDone] = useState(false);
+  const [settled, setSettled] = useState<'done' | 'skipped' | null>(null);
+  const [undone, setUndone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const due = dueLabel(turn, timeZone);
   const canComplete = mine || crossComplete;
@@ -47,25 +48,74 @@ export function TurnRow({
     setError(null);
     // Optimistic: the row collapses immediately, because tapping "done" while
     // standing at the sink should feel instant.
-    setDone(true);
+    setSettled('done');
     start(async () => {
       const res = await completeTurn(turn.id);
       if (!res.ok) {
-        setDone(false);
+        setSettled(null);
         setError(res.error);
       }
     });
   }
 
-  if (done) {
+  function onSkip() {
+    setError(null);
+    setSettled('skipped');
+    start(async () => {
+      const res = await skipTurn(turn.id);
+      if (!res.ok) {
+        setSettled(null);
+        setError(res.error);
+      }
+    });
+  }
+
+  function onUndo() {
+    setError(null);
+    start(async () => {
+      const res = await undoTurn(turn.id);
+      if (res.ok) {
+        setUndone(true);
+      } else {
+        setError(res.error);
+      }
+    });
+  }
+
+  if (undone) {
+    return (
+      <Card className={cx('flex items-center gap-3 p-3.5', className)}>
+        <span className="w-9 h-9 grid place-items-center rounded-pill bg-info/15 text-info shrink-0">
+          <Icon.Undo size={18} />
+        </span>
+        <p className="t-body-md text-ink-2">{turn.chore.name} is back on the board.</p>
+      </Card>
+    );
+  }
+
+  if (settled) {
     return (
       <Card className={cx('flex items-center gap-3 p-3.5 opacity-60', className)}>
-        <span className="w-9 h-9 grid place-items-center rounded-pill bg-success/15 text-success">
-          <Icon.Check size={20} />
+        <span
+          className={cx(
+            'w-9 h-9 grid place-items-center rounded-pill shrink-0',
+            settled === 'done' ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning',
+          )}
+        >
+          {settled === 'done' ? <Icon.Check size={20} /> : <Icon.SkipForward size={18} />}
         </span>
-        <p className="t-body-md text-ink-2">
-          <span className="line-through">{turn.chore.name}</span> — nice.
+        <p className="t-body-md text-ink-2 flex-1 min-w-0">
+          <span className="line-through">{turn.chore.name}</span>
+          {settled === 'done' ? ' — nice.' : ' — skipped.'}
         </p>
+        <button
+          type="button"
+          onClick={onUndo}
+          disabled={pending}
+          className="t-body-sm font-medium text-accent shrink-0 disabled:opacity-50"
+        >
+          Undo
+        </button>
       </Card>
     );
   }
@@ -95,24 +145,98 @@ export function TurnRow({
         </div>
 
         {canComplete && (
-          <Button
-            size="md"
-            onClick={onComplete}
-            disabled={pending}
-            aria-label={
-              mine
-                ? `Mark ${turn.chore.name} done`
-                : `Mark ${turn.chore.name} done for ${turn.assignee.full_name.split(' ')[0]}`
-            }
-          >
-            <Icon.Check size={18} />
-            {mine ? 'Done' : `For ${turn.assignee.full_name.split(' ')[0]}`}
-          </Button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={onSkip}
+              disabled={pending}
+              aria-label={
+                mine
+                  ? `Skip my turn for ${turn.chore.name}`
+                  : `Skip ${turn.assignee.full_name.split(' ')[0]}'s turn for ${turn.chore.name}`
+              }
+              title="Skip — out of town, etc."
+              className="w-10 h-10 grid place-items-center rounded-md text-ink-muted hover:bg-hover active:bg-sunken disabled:opacity-50"
+            >
+              <Icon.SkipForward size={18} />
+            </button>
+            <Button
+              size="md"
+              onClick={onComplete}
+              disabled={pending}
+              aria-label={
+                mine
+                  ? `Mark ${turn.chore.name} done`
+                  : `Mark ${turn.chore.name} done for ${turn.assignee.full_name.split(' ')[0]}`
+              }
+            >
+              <Icon.Check size={18} />
+              {mine ? 'Done' : `For ${turn.assignee.full_name.split(' ')[0]}`}
+            </Button>
+          </div>
         )}
       </div>
 
       {error && <p className="t-body-sm text-danger mt-2">{error}</p>}
     </Card>
+  );
+}
+
+/** One row of the "Recently done" list — undoable in case that tap was a mistake. */
+export function RecentlyDoneRow({
+  turnId,
+  emoji,
+  choreName,
+  assignee,
+  dateLabel,
+}: {
+  turnId: string;
+  emoji: string;
+  choreName: string;
+  assignee: { initials: string; color: string };
+  dateLabel: string;
+}) {
+  const [pending, start] = useTransition();
+  const [undone, setUndone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (undone) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-2.5">
+        <span className="w-6 h-6 grid place-items-center text-info shrink-0" aria-hidden>
+          <Icon.Undo size={16} />
+        </span>
+        <span className="t-body-sm text-ink-muted flex-1 min-w-0">Back on the board.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-2.5">
+      <span className="text-lg w-6 text-center shrink-0" aria-hidden>{emoji}</span>
+      <span className="t-body-md text-ink flex-1 min-w-0 truncate">{choreName}</span>
+      {error && <span className="t-body-sm text-danger shrink-0">{error}</span>}
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => {
+          setError(null);
+          start(async () => {
+            const res = await undoTurn(turnId);
+            if (res.ok) setUndone(true);
+            else setError(res.error);
+          });
+        }}
+        aria-label={`Undo ${choreName}, done ${dateLabel}`}
+        className="t-body-sm font-medium text-accent shrink-0 disabled:opacity-50"
+      >
+        Undo
+      </button>
+      <Initials initials={assignee.initials} color={assignee.color} size="sm" />
+      <span className="t-body-sm text-ink-muted tabular-nums w-14 text-right shrink-0">
+        {dateLabel}
+      </span>
+    </div>
   );
 }
 
