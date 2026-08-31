@@ -173,6 +173,18 @@ export async function postKioskMessage(body: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+/** Clears a note before it naturally expires. RLS lets any housemate do this
+ * — it's a shared board, not a private post. */
+export async function deleteKioskMessage(id: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.from('kiosk_messages').delete().eq('id', id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/', 'layout');
+  revalidatePath('/kiosk');
+  return { ok: true };
+}
+
 export async function respondToSwap(swapId: string, accept: boolean): Promise<ActionResult> {
   const supabase = await createClient();
 

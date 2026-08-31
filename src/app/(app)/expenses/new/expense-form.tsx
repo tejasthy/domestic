@@ -331,6 +331,18 @@ export function ExpenseForm({ me, members }: { me: Profile; members: Profile[] }
         <p className="t-body-sm text-ink-muted text-center mt-2">
           {scanNote ?? 'Snap it and the fields fill themselves in.'}
         </p>
+        {!items && (
+          <Button
+            type="button"
+            tone="ghost"
+            size="sm"
+            full
+            className="mt-2"
+            onClick={() => setItems([newItem()])}
+          >
+            Add items by hand instead
+          </Button>
+        )}
       </Card>
 
       <Field label="What was it">

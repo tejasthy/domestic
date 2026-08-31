@@ -8,6 +8,7 @@ import {
 } from '@/lib/household-actions';
 import { Button, Card, Field, Initials, Input, Pill, Select, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
+import { formatInTimeZone } from '@/lib/timezone';
 
 /* ------------------------------------------------------------------ sharing */
 
@@ -256,6 +257,7 @@ export function NewInvite({ householdName }: { householdName: string }) {
 export function InviteList({
   householdName,
   invites,
+  timeZone,
 }: {
   householdName: string;
   invites: {
@@ -267,18 +269,19 @@ export function InviteList({
     usedCount: number;
     maxUses: number;
   }[];
+  timeZone: string;
 }) {
   return (
     <Card className="divide-y divide-[var(--border-subtle)]">
       {invites.map((inv) => (
-        <InviteRow key={inv.id} householdName={householdName} {...inv} />
+        <InviteRow key={inv.id} householdName={householdName} timeZone={timeZone} {...inv} />
       ))}
     </Card>
   );
 }
 
 function InviteRow({
-  householdName, id, code, email, fullName, expiresAt,
+  householdName, id, code, email, fullName, expiresAt, timeZone,
 }: {
   householdName: string;
   id: string;
@@ -286,6 +289,7 @@ function InviteRow({
   email: string | null;
   fullName: string | null;
   expiresAt: string | null;
+  timeZone: string;
 }) {
   const [pending, start] = useTransition();
   const [revoked, setRevoked] = useState(false);
@@ -302,10 +306,7 @@ function InviteRow({
         <p className="t-body-sm text-ink-muted truncate">
           {fullName ?? email ?? 'Anyone with the link'}
           {expiresAt &&
-            ` · expires ${new Date(expiresAt).toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-            })}`}
+            ` · expires ${formatInTimeZone(expiresAt, timeZone, { month: 'short', day: 'numeric' })}`}
         </p>
       </div>
       <Button
@@ -512,8 +513,10 @@ export function LocationSetting({ label }: { label: string | null }) {
 
 export function KioskDevices({
   devices,
+  timeZone,
 }: {
   devices: { id: string; name: string; lastSeenAt: string | null }[];
+  timeZone: string;
 }) {
   const [pending, start] = useTransition();
   const [name, setName] = useState('Kitchen iPad');
@@ -530,10 +533,7 @@ export function KioskDevices({
               <span className="t-body-md text-ink flex-1">{d.name}</span>
               <span className="t-body-sm text-ink-muted">
                 {d.lastSeenAt
-                  ? `seen ${new Date(d.lastSeenAt).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    })}`
+                  ? `seen ${formatInTimeZone(d.lastSeenAt, timeZone, { month: 'short', day: 'numeric' })}`
                   : 'never paired'}
               </span>
             </div>
@@ -599,8 +599,10 @@ const AI_PROVIDERS: Record<string, string> = {
 
 export function AiConfig({
   summary,
+  timeZone,
 }: {
   summary: { provider: string; updatedAt: string } | null;
+  timeZone: string;
 }) {
   const [pending, start] = useTransition();
   const [editing, setEditing] = useState(false);
@@ -618,10 +620,7 @@ export function AiConfig({
           </p>
           <p className="t-body-sm text-ink-muted">
             Updated{' '}
-            {new Date(summary.updatedAt).toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-            })}
+            {formatInTimeZone(summary.updatedAt, timeZone, { month: 'short', day: 'numeric' })}
           </p>
         </div>
         <div className="flex gap-2">

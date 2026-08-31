@@ -40,16 +40,29 @@ export function describeCadence(chore: Pick<Chore, 'cadence' | 'days_of_week' | 
 
 export type DueBucket = 'overdue' | 'today' | 'tomorrow' | 'upcoming' | 'anytime';
 
-export function bucketFor(dueAt: string | null, now = new Date()): DueBucket {
-  if (!dueAt) return 'anytime';
-  const due = new Date(dueAt);
-  const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
-  const startOfTomorrow = new Date(startOfToday); startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
-  const startOfDayAfter = new Date(startOfTomorrow); startOfDayAfter.setDate(startOfDayAfter.getDate() + 1);
+/** "YYYY-MM-DD" as seen in `timeZone` — lexicographically sortable, so day
+ * boundaries become string comparisons instead of DST-sensitive Date math. */
+function dayKey(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(date);
+}
 
-  if (due < now && due < startOfTomorrow) return due < startOfToday ? 'overdue' : 'today';
-  if (due < startOfTomorrow) return 'today';
-  if (due < startOfDayAfter) return 'tomorrow';
+function shiftDayKey(key: string, days: number): string {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/** Buckets by calendar day in the household's own timezone — not the server
+ * process's, which is UTC in production and would otherwise mislabel turns
+ * near midnight. */
+export function bucketFor(dueAt: string | null, timeZone: string, now = new Date()): DueBucket {
+  if (!dueAt) return 'anytime';
+  const todayKey = dayKey(now, timeZone);
+  const dueKey = dayKey(new Date(dueAt), timeZone);
+  if (dueKey < todayKey) return 'overdue';
+  if (dueKey === todayKey) return 'today';
+  if (dueKey === shiftDayKey(todayKey, 1)) return 'tomorrow';
   return 'upcoming';
 }
 

@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  kioskCompleteTurn, kioskFlagChore, kioskRespondSwap, kioskSetChoreActive,
+  kioskCompleteTurn, kioskFlagChore, kioskRespondSwap, kioskSetChoreActive, kioskDismissMessage,
 } from '@/lib/kiosk-actions';
 import { Card, Initials, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
@@ -293,6 +293,41 @@ export function KioskSwapRow({
         )}
       </div>
     </Card>
+  );
+}
+
+/** Only renders when the acting member is an admin. */
+export function KioskMessageDismiss({
+  messageId,
+  adminIds,
+}: {
+  messageId: string;
+  adminIds: string[];
+}) {
+  const { actingId } = useActingAs();
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [dismissed, setDismissed] = useState(false);
+  const canDismiss = !!actingId && adminIds.includes(actingId);
+
+  if (dismissed || !canDismiss) return null;
+
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() => {
+        if (!actingId) return;
+        start(async () => {
+          const res = await kioskDismissMessage(messageId, actingId);
+          if (res.ok) { setDismissed(true); router.refresh(); }
+        });
+      }}
+      aria-label="Clear this note"
+      className="shrink-0 w-6 h-6 grid place-items-center rounded-pill text-ink-muted hover:bg-hover disabled:opacity-50"
+    >
+      <Icon.Close size={16} />
+    </button>
   );
 }
 

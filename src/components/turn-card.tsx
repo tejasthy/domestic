@@ -5,16 +5,17 @@ import { completeTurn, flagChore, respondToSwap } from '@/lib/actions';
 import { Button, Card, Initials, Pill, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
 import { bucketFor } from '@/lib/rotation';
+import { formatInTimeZone } from '@/lib/timezone';
 import type { TurnCard as Turn } from '@/lib/types';
 
-function dueLabel(turn: Turn) {
-  const bucket = bucketFor(turn.due_at);
+function dueLabel(turn: Turn, timeZone: string) {
+  const bucket = bucketFor(turn.due_at, timeZone);
   if (bucket === 'anytime') return { text: 'Whenever', tone: 'neutral' as const };
   if (bucket === 'overdue') return { text: 'Overdue', tone: 'danger' as const };
   if (bucket === 'today') return { text: 'Today', tone: 'warning' as const };
   if (bucket === 'tomorrow') return { text: 'Tomorrow', tone: 'neutral' as const };
 
-  const when = new Date(turn.due_at!).toLocaleDateString('en-US', {
+  const when = formatInTimeZone(turn.due_at!, timeZone, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
@@ -26,18 +27,20 @@ export function TurnRow({
   turn,
   mine,
   crossComplete = false,
+  timeZone,
   className,
 }: {
   turn: Turn;
   mine: boolean;
   /** Household setting: anyone can complete anyone's turn. */
   crossComplete?: boolean;
+  timeZone: string;
   className?: string;
 }) {
   const [pending, start] = useTransition();
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const due = dueLabel(turn);
+  const due = dueLabel(turn, timeZone);
   const canComplete = mine || crossComplete;
 
   function onComplete() {

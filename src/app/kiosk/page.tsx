@@ -4,9 +4,10 @@ import { Logo } from '@/components/brand';
 import { Card, Initials, Pill, cx } from '@/components/ui';
 import { formatCents } from '@/lib/money';
 import { bucketFor, describeCadence } from '@/lib/rotation';
+import { formatInTimeZone } from '@/lib/timezone';
 import {
   KioskClock, AutoRefresh, ActingAsProvider, ActingAsBar,
-  KioskTurnCard, KioskFlagButton, KioskSwapRow, KioskChoreToggle,
+  KioskTurnCard, KioskFlagButton, KioskSwapRow, KioskChoreToggle, KioskMessageDismiss,
 } from './kiosk-client';
 
 export const dynamic = 'force-dynamic';
@@ -62,7 +63,7 @@ export default async function KioskPage({
   // rule the main dashboard uses for "You're up". It only belongs in "Up now"
   // once someone flags it, which is what the kiosk's own Flag buttons do.
   const urgent = upNext.filter((t) =>
-    ['overdue', 'today'].includes(bucketFor(t.due_at)),
+    ['overdue', 'today'].includes(bucketFor(t.due_at, household.timezone)),
   );
   const later = upNext.filter((t) => !urgent.includes(t));
 
@@ -99,10 +100,13 @@ export default async function KioskPage({
             {messages.map((m) => {
               const author = m.author_id ? byId.get(m.author_id) : null;
               return (
-                <p key={m.id} className="t-body-md text-ink py-1.5 first:pt-0 last:pb-0">
-                  {author && <span className="font-semibold">{author.full_name.split(' ')[0]}: </span>}
-                  {m.body}
-                </p>
+                <div key={m.id} className="flex items-start gap-2 py-1.5 first:pt-0 last:pb-0">
+                  <p className="t-body-md text-ink flex-1 min-w-0">
+                    {author && <span className="font-semibold">{author.full_name.split(' ')[0]}: </span>}
+                    {m.body}
+                  </p>
+                  <KioskMessageDismiss messageId={m.id} adminIds={adminIds} />
+                </div>
               );
             })}
           </Card>
@@ -118,7 +122,7 @@ export default async function KioskPage({
             <h2 className="t-label text-ink-muted mb-3">Up now</h2>
             <div className="grid grid-cols-2 gap-4">
               {urgent.map((t) => {
-                const bucket = bucketFor(t.due_at);
+                const bucket = bucketFor(t.due_at, household.timezone);
                 return (
                   <KioskTurnCard key={t.id} turnId={t.id} choreName={t.chore.name} className="p-5">
                     <div className="flex items-start justify-between gap-3">
@@ -208,7 +212,7 @@ export default async function KioskPage({
                       />
                       <span className="t-body-md text-ink-muted w-28 text-right">
                         {t.due_at
-                          ? new Date(t.due_at).toLocaleDateString('en-US', {
+                          ? formatInTimeZone(t.due_at, household.timezone, {
                               weekday: 'short',
                               month: 'short',
                               day: 'numeric',
@@ -274,7 +278,7 @@ export default async function KioskPage({
                       <div className="min-w-0 flex-1">
                         <p className="t-body-md text-ink leading-snug">{a.summary}</p>
                         <p className="t-caption text-ink-muted mt-0.5">
-                          {new Date(a.created_at).toLocaleTimeString('en-US', {
+                          {formatInTimeZone(a.created_at, household.timezone, {
                             hour: 'numeric',
                             minute: '2-digit',
                           })}

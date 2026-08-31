@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { getSession, getChores, getOpenTurns, getBalances } from '@/lib/data';
+import { getSession, getChores, getOpenTurns, getBalances, getKioskMessages } from '@/lib/data';
 import { TurnRow, FlagButton, SwapRequestRow } from '@/components/turn-card';
 import { KioskNote } from '@/components/kiosk-note';
 import { Card, EmptyState, SectionHeader, Initials } from '@/components/ui';
@@ -24,12 +24,14 @@ export default async function TodayPage() {
   const { me, household, members, modules } = session;
   const showChores = modules.includes('chores');
   const showMoney = modules.includes('expenses');
+  const showKiosk = modules.includes('kiosk');
 
   const supabase = await createClient();
-  const [chores, turns, balances, { data: swaps }] = await Promise.all([
+  const [chores, turns, balances, kioskMessages, { data: swaps }] = await Promise.all([
     showChores ? getChores() : Promise.resolve([]),
     showChores ? getOpenTurns() : Promise.resolve([]),
     showMoney ? getBalances() : Promise.resolve<Record<string, number>>({}),
+    showKiosk ? getKioskMessages() : Promise.resolve([]),
     supabase
       .from('chore_swaps')
       .select(`
@@ -47,7 +49,7 @@ export default async function TodayPage() {
   // queued-but-unflagged turns (due_at null, bucket 'anytime') are just
   // holding a place in line, not yet needed.
   const mine = turns.filter((t) => t.assignee_id === me.id);
-  const mineNow = mine.filter((t) => ['overdue', 'today'].includes(bucketFor(t.due_at)));
+  const mineNow = mine.filter((t) => ['overdue', 'today'].includes(bucketFor(t.due_at, household.timezone)));
   const mineLater = mine.filter((t) => !mineNow.includes(t));
   const theirs = turns.filter((t) => t.assignee_id !== me.id);
 
@@ -100,7 +102,7 @@ export default async function TodayPage() {
         ) : (
           <div className="space-y-2">
             {mineNow.map((t) => (
-              <TurnRow key={t.id} turn={t} mine crossComplete={household.allow_member_cross_complete} />
+              <TurnRow key={t.id} turn={t} mine crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} />
             ))}
           </div>
         )}
@@ -135,7 +137,7 @@ export default async function TodayPage() {
           />
           <div className="space-y-2">
             {theirs.slice(0, 6).map((t) => (
-              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} />
+              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} />
             ))}
           </div>
         </section>
@@ -146,7 +148,7 @@ export default async function TodayPage() {
           <SectionHeader title="Coming up for you" />
           <div className="space-y-2">
             {mineLater.map((t) => (
-              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} />
+              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} />
             ))}
           </div>
         </section>
@@ -200,10 +202,20 @@ export default async function TodayPage() {
       </section>
       )}
 
-      {modules.includes('kiosk') && (
+      {showKiosk && (
         <section>
           <SectionHeader title="Leave a note for the kiosk" />
-          <KioskNote />
+          <KioskNote
+            timeZone={household.timezone}
+            messages={kioskMessages.map((m) => ({
+              id: m.id,
+              body: m.body,
+              createdAt: m.created_at,
+              authorName: m.author_id
+                ? members.find((p) => p.id === m.author_id)?.full_name.split(' ')[0] ?? null
+                : null,
+            }))}
+          />
         </section>
       )}
 
