@@ -93,6 +93,21 @@ export async function kioskSetChoreActive(
   return { ok: true };
 }
 
+export async function kioskUndoTurn(turnId: string, profileId: string): Promise<ActionResult> {
+  const ctx = await kioskAdmin();
+  if (!ctx.ok) return ctx;
+
+  const { error } = await ctx.admin.rpc('kiosk_undo_turn', {
+    p_household: ctx.householdId,
+    p_turn: turnId,
+    p_profile: profileId,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath('/kiosk');
+  return { ok: true };
+}
+
 export async function kioskDismissMessage(messageId: string, profileId: string): Promise<ActionResult> {
   const ctx = await kioskAdmin();
   if (!ctx.ok) return ctx;

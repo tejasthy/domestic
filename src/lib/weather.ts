@@ -54,15 +54,31 @@ export async function geocodeLocation(query: string): Promise<GeocodeResult | nu
   return { label, lat: hit.latitude, lon: hit.longitude };
 }
 
-export type Weather = { tempF: number; emoji: string; label: string };
+export type Weather = {
+  tempF: number;
+  emoji: string;
+  label: string;
+  feelsLikeF: number;
+  humidity: number;
+  windMph: number;
+  windDirection: number;
+  highF: number;
+  lowF: number;
+};
 
-/** Cached for 10 minutes so the kiosk's 45s refresh loop doesn't hammer the API. */
+/** Cached for 10 minutes so the kiosk's refresh loop doesn't hammer the API. */
 export async function getWeather(lat: number, lon: number): Promise<Weather | null> {
   const url = new URL('https://api.open-meteo.com/v1/forecast');
   url.searchParams.set('latitude', String(lat));
   url.searchParams.set('longitude', String(lon));
-  url.searchParams.set('current', 'temperature_2m,weather_code');
+  url.searchParams.set(
+    'current',
+    'temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code',
+  );
+  url.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min');
   url.searchParams.set('temperature_unit', 'fahrenheit');
+  url.searchParams.set('wind_speed_unit', 'mph');
+  url.searchParams.set('timezone', 'auto');
 
   const res = await fetch(url, { next: { revalidate: 600 } });
   if (!res.ok) return null;
@@ -72,5 +88,17 @@ export async function getWeather(lat: number, lon: number): Promise<Weather | nu
   if (!current || typeof current.temperature_2m !== 'number') return null;
 
   const info = WEATHER_CODES[current.weather_code] ?? { emoji: '🌡️', label: 'Weather' };
-  return { tempF: Math.round(current.temperature_2m), emoji: info.emoji, label: info.label };
+  const daily = data?.daily;
+
+  return {
+    tempF: Math.round(current.temperature_2m),
+    emoji: info.emoji,
+    label: info.label,
+    feelsLikeF: Math.round(current.apparent_temperature),
+    humidity: Math.round(current.relative_humidity_2m),
+    windMph: Math.round(current.wind_speed_10m),
+    windDirection: current.wind_direction_10m,
+    highF: Math.round(daily?.temperature_2m_max?.[0]),
+    lowF: Math.round(daily?.temperature_2m_min?.[0]),
+  };
 }

@@ -520,6 +520,10 @@ export type Database = {
         Args: { p_household: string; p_message: string; p_profile: string };
         Returns: undefined;
       };
+      kiosk_undo_turn: {
+        Args: { p_household: string; p_turn: string; p_profile: string };
+        Returns: ChoreTurn;
+      };
     };
     Enums: {
       chore_cadence: ChoreCadence;

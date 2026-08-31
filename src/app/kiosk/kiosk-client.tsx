@@ -4,9 +4,11 @@ import { createContext, useContext, useEffect, useState, useSyncExternalStore, u
 import { useRouter } from 'next/navigation';
 import {
   kioskCompleteTurn, kioskFlagChore, kioskRespondSwap, kioskSetChoreActive, kioskDismissMessage,
+  kioskUndoTurn,
 } from '@/lib/kiosk-actions';
 import { Card, Initials, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
+import type { Weather } from '@/lib/weather';
 
 /**
  * Ticks on an interval, subscription-style. The snapshot is a bucketed integer
@@ -373,5 +375,122 @@ export function KioskChoreToggle({
       <span aria-hidden>{emoji}</span>
       Retire {name}
     </button>
+  );
+}
+
+/* ---------------------------------------------------------------- lately */
+
+/**
+ * One row of the kiosk's "Lately" feed. `undoable` is computed server-side
+ * from whether the referenced turn is still sitting in the state this entry
+ * describes (see kiosk.ts's turnStatus map) — mirrors the Activity page's
+ * ActivityRow, but acts through the kiosk's "acting as" profile instead of a
+ * session, so it needs actingId and only enables once someone's tapped in.
+ */
+export function KioskActivityRow({
+  turnId,
+  summary,
+  timeLabel,
+  actor,
+  undoable,
+}: {
+  turnId: string | null;
+  summary: string;
+  timeLabel: string;
+  actor: { initials: string; color: string } | null;
+  undoable: boolean;
+}) {
+  const { actingId } = useActingAs();
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [undone, setUndone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="flex items-start gap-3 px-4 py-3">
+      {actor ? (
+        <Initials initials={actor.initials} color={actor.color} size="sm" />
+      ) : (
+        <span className="w-6" aria-hidden />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className={cx('t-body-md leading-snug', undone ? 'text-ink-muted' : 'text-ink')}>
+          {undone ? 'Back on the board.' : summary}
+        </p>
+        <div className="flex items-center gap-2 mt-0.5">
+          <p className="t-caption text-ink-muted">{timeLabel}</p>
+          {error && <p className="t-caption text-danger">{error}</p>}
+        </div>
+      </div>
+      {undoable && !undone && turnId && (
+        <button
+          type="button"
+          disabled={!actingId || pending}
+          onClick={() => {
+            if (!actingId) return;
+            setError(null);
+            start(async () => {
+              const res = await kioskUndoTurn(turnId, actingId);
+              if (res.ok) { setUndone(true); router.refresh(); }
+              else setError(res.error);
+            });
+          }}
+          aria-label={
+            actingId ? `Undo: ${summary}` : `Tap your name above first to undo: ${summary}`
+          }
+          className="t-body-sm font-medium text-accent shrink-0 disabled:opacity-50"
+        >
+          Undo
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- weather */
+
+const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+
+function compassLabel(degrees: number): string {
+  return COMPASS[Math.round(degrees / 22.5) % 16];
+}
+
+/** Tap the header's weather readout to drop down feels-like/humidity/wind/
+ * high-low — everything getWeather() already fetches but the collapsed view
+ * has no room for. Purely local UI state; nothing here touches the server. */
+export function KioskWeather({ weather }: { weather: Weather }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <button
+      type="button"
+      onClick={() => setExpanded((v) => !v)}
+      aria-expanded={expanded}
+      aria-label={expanded ? 'Hide detailed weather' : 'Show detailed weather'}
+      className="text-right rounded-lg -m-2 p-2 transition-colors duration-[120ms] hover:bg-hover active:bg-sunken"
+    >
+      <p className="t-display-lg text-ink leading-none">
+        <span aria-hidden>{weather.emoji}</span> {weather.tempF}°
+      </p>
+      <p className="t-body-md text-ink-muted mt-1">{weather.label}</p>
+
+      {expanded && (
+        <div className="mt-3 pt-3 border-t border-line grid grid-cols-2 gap-x-6 gap-y-2 text-left">
+          <WeatherDetail label="Feels like" value={`${weather.feelsLikeF}°`} />
+          <WeatherDetail label="High / low" value={`${weather.highF}° / ${weather.lowF}°`} />
+          <WeatherDetail label="Humidity" value={`${weather.humidity}%`} />
+          <WeatherDetail label="Wind" value={`${weather.windMph} mph ${compassLabel(weather.windDirection)}`} />
+        </div>
+      )}
+    </button>
+  );
+}
+
+function WeatherDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="t-caption text-ink-muted">{label}</p>
+      <p className="t-body-md font-medium text-ink tabular-nums">{value}</p>
+    </div>
   );
 }
