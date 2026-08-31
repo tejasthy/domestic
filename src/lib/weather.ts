@@ -54,6 +54,15 @@ export async function geocodeLocation(query: string): Promise<GeocodeResult | nu
   return { label, lat: hit.latitude, lon: hit.longitude };
 }
 
+export type HourlyForecast = { hourLabel: string; tempF: number; emoji: string; precipChance: number };
+export type DailyForecast = {
+  weekday: string;
+  emoji: string;
+  highF: number;
+  lowF: number;
+  precipChance: number;
+};
+
 export type Weather = {
   tempF: number;
   emoji: string;
@@ -64,7 +73,39 @@ export type Weather = {
   windDirection: number;
   highF: number;
   lowF: number;
+  uvIndex: number;
+  precipChance: number;
+  sunrise: string;
+  sunset: string;
+  hourly: HourlyForecast[];
+  daily: DailyForecast[];
 };
+
+/** "14:00" -> "2 PM". Open-Meteo returns local wall-clock strings (no offset)
+ * when timezone=auto, so slicing the string avoids any server/browser
+ * timezone mismatch that constructing a Date would risk. */
+function formatHourLabel(iso: string): string {
+  const hour = Number(iso.slice(11, 13));
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12} ${hour >= 12 ? 'PM' : 'AM'}`;
+}
+
+function formatClockLabel(iso: string): string {
+  const hour = Number(iso.slice(11, 13));
+  const minute = iso.slice(14, 16);
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12}:${minute} ${hour >= 12 ? 'PM' : 'AM'}`;
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Weekday from a "YYYY-MM-DD" date string, using UTC arithmetic so the
+ * server's own timezone can't shift which calendar day it lands on. */
+function formatWeekday(dateStr: string, index: number): string {
+  if (index === 0) return 'Today';
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+}
 
 /** Cached for 10 minutes so the kiosk's refresh loop doesn't hammer the API. */
 export async function getWeather(lat: number, lon: number): Promise<Weather | null> {
@@ -75,10 +116,15 @@ export async function getWeather(lat: number, lon: number): Promise<Weather | nu
     'current',
     'temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code',
   );
-  url.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min');
+  url.searchParams.set('hourly', 'temperature_2m,weather_code,precipitation_probability');
+  url.searchParams.set(
+    'daily',
+    'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max',
+  );
   url.searchParams.set('temperature_unit', 'fahrenheit');
   url.searchParams.set('wind_speed_unit', 'mph');
   url.searchParams.set('timezone', 'auto');
+  url.searchParams.set('forecast_days', '7');
 
   const res = await fetch(url, { next: { revalidate: 600 } });
   if (!res.ok) return null;
@@ -89,6 +135,29 @@ export async function getWeather(lat: number, lon: number): Promise<Weather | nu
 
   const info = WEATHER_CODES[current.weather_code] ?? { emoji: '🌡️', label: 'Weather' };
   const daily = data?.daily;
+  const hourly = data?.hourly;
+
+  const hourTimes: string[] = hourly?.time ?? [];
+  const startIndex = Math.max(0, hourTimes.indexOf(current.time));
+  const hourPoints: HourlyForecast[] = hourTimes.slice(startIndex, startIndex + 24).map((time, i) => {
+    const idx = startIndex + i;
+    const code = hourly.weather_code[idx];
+    return {
+      hourLabel: i === 0 ? 'Now' : formatHourLabel(time),
+      tempF: Math.round(hourly.temperature_2m[idx]),
+      emoji: (WEATHER_CODES[code] ?? info).emoji,
+      precipChance: Math.round(hourly.precipitation_probability?.[idx] ?? 0),
+    };
+  });
+
+  const dayTimes: string[] = daily?.time ?? [];
+  const dayPoints: DailyForecast[] = dayTimes.map((date, i) => ({
+    weekday: formatWeekday(date, i),
+    emoji: (WEATHER_CODES[daily.weather_code[i]] ?? info).emoji,
+    highF: Math.round(daily.temperature_2m_max[i]),
+    lowF: Math.round(daily.temperature_2m_min[i]),
+    precipChance: Math.round(daily.precipitation_probability_max?.[i] ?? 0),
+  }));
 
   return {
     tempF: Math.round(current.temperature_2m),
@@ -100,5 +169,11 @@ export async function getWeather(lat: number, lon: number): Promise<Weather | nu
     windDirection: current.wind_direction_10m,
     highF: Math.round(daily?.temperature_2m_max?.[0]),
     lowF: Math.round(daily?.temperature_2m_min?.[0]),
+    uvIndex: Math.round(daily?.uv_index_max?.[0] ?? 0),
+    precipChance: Math.round(daily?.precipitation_probability_max?.[0] ?? 0),
+    sunrise: daily?.sunrise?.[0] ? formatClockLabel(daily.sunrise[0]) : '—',
+    sunset: daily?.sunset?.[0] ? formatClockLabel(daily.sunset[0]) : '—',
+    hourly: hourPoints,
+    daily: dayPoints,
   };
 }
