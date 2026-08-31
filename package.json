@@ -14,7 +14,8 @@
     "gen:icons": "node scripts/gen-icons.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:db": "bash supabase/tests/run.sh"
+    "test:db": "bash supabase/tests/run.sh",
+    "sql:bundle": "node scripts/bundle-sql.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
