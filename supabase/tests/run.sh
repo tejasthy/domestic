@@ -92,6 +92,7 @@ echo "── chore admin, recurring expenses, AI config ────────
 "${PSQL[@]}" < "$HERE/recurring_expenses.sql"
 "${PSQL[@]}" < "$HERE/ai_config.sql"
 "${PSQL[@]}" < "$HERE/expense_items.sql"
+"${PSQL[@]}" < "$HERE/update_expense.sql"
 
 echo
 echo "All database checks passed."

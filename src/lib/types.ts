@@ -459,6 +459,28 @@ export type Database = {
         };
         Returns: Expense;
       };
+      update_expense: {
+        Args: {
+          p_expense_id: string;
+          p_description: string;
+          p_paid_by: string;
+          p_spent_on: string;
+          p_category?: string;
+          p_receipt_url?: string | null;
+          p_note?: string | null;
+          p_items?: {
+            name: string;
+            amount_cents: number;
+            kind: ExpenseItemKind;
+            split_kind: SplitKind;
+            position?: number;
+            splits: { profile_id: string; owed_cents: number; weight: number | null }[];
+          }[] | null;
+          p_split_kind?: SplitKind;
+          p_splits?: { profile_id: string; owed_cents: number; weight: number | null }[] | null;
+        };
+        Returns: Expense;
+      };
       set_recurring_expense_active: { Args: { p_id: string; p_active: boolean }; Returns: undefined };
       post_due_recurring_expenses: { Args: Record<PropertyKey, never>; Returns: Expense[] };
       set_ai_config: { Args: { p_provider: AiProvider; p_api_key: string; p_secret: string }; Returns: undefined };

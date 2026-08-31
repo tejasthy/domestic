@@ -238,6 +238,58 @@ const ExpenseInput = z.object({
 
 export type ExpenseInputType = z.input<typeof ExpenseInput>;
 
+type SplitResult = { ok: true; owed: Record<string, number> } | { ok: false; error: string };
+
+/** Shared by addExpense and updateExpense — the split math itself (money.ts)
+ * must stay remainder-safe; this just picks the right function per split_kind
+ * and turns its failure modes into the same friendly errors both callers show. */
+function computeSplits(
+  splitKind: 'equal' | 'exact' | 'shares' | 'percent' | 'adjustment',
+  amountCents: number,
+  participants: string[],
+  weights: Record<string, number> | undefined,
+): SplitResult {
+  if (splitKind === 'equal') {
+    return { ok: true, owed: splitEqual(amountCents, participants) };
+  }
+  if (splitKind === 'exact') {
+    const owed = Object.fromEntries(
+      participants.map((id) => [id, Math.round((weights?.[id] ?? 0) * 100)]),
+    );
+    const sum = Object.values(owed).reduce((a, b) => a + b, 0);
+    if (sum !== amountCents) {
+      const diff = (amountCents - sum) / 100;
+      return {
+        ok: false,
+        error: `Exact splits must add up to the total — you're ${diff > 0 ? 'short' : 'over'} by $${Math.abs(diff).toFixed(2)}.`,
+      };
+    }
+    return { ok: true, owed };
+  }
+  if (splitKind === 'adjustment') {
+    const adjustments = Object.fromEntries(
+      participants.map((id) => [id, Math.round((weights?.[id] ?? 0) * 100)]),
+    );
+    const sumAdj = Object.values(adjustments).reduce((a, b) => a + b, 0);
+    if (sumAdj > amountCents) {
+      return {
+        ok: false,
+        error: `Adjustments can't exceed the total — you're over by $${((sumAdj - amountCents) / 100).toFixed(2)}.`,
+      };
+    }
+    const owed = splitByAdjustment(amountCents, participants, adjustments);
+    if (Object.values(owed).some((c) => c < 0)) {
+      return { ok: false, error: 'Someone would owe a negative amount — lower their adjustment.' };
+    }
+    return { ok: true, owed };
+  }
+  const w = Object.fromEntries(participants.map((id) => [id, weights?.[id] ?? 0]));
+  if (Object.values(w).every((x) => x <= 0)) {
+    return { ok: false, error: 'Give at least one person a share.' };
+  }
+  return { ok: true, owed: splitByWeight(amountCents, w) };
+}
+
 export async function addExpense(input: ExpenseInputType): Promise<ActionResult> {
   const parsed = ExpenseInput.safeParse(input);
   if (!parsed.success) {
@@ -297,44 +349,9 @@ export async function addExpense(input: ExpenseInputType): Promise<ActionResult>
 
     // Work out each person's share before writing anything, so a bad split
     // never leaves a half-recorded expense behind.
-    if (e.split_kind === 'equal') {
-      owed = splitEqual(amountCents, participants);
-    } else if (e.split_kind === 'exact') {
-      owed = Object.fromEntries(
-        participants.map((id) => [id, Math.round((e.weights?.[id] ?? 0) * 100)]),
-      );
-      const sum = Object.values(owed).reduce((a, b) => a + b, 0);
-      if (sum !== amountCents) {
-        const diff = (amountCents - sum) / 100;
-        return {
-          ok: false,
-          error: `Exact splits must add up to the total — you're ${diff > 0 ? 'short' : 'over'} by $${Math.abs(diff).toFixed(2)}.`,
-        };
-      }
-    } else if (e.split_kind === 'adjustment') {
-      const adjustments = Object.fromEntries(
-        participants.map((id) => [id, Math.round((e.weights?.[id] ?? 0) * 100)]),
-      );
-      const sumAdj = Object.values(adjustments).reduce((a, b) => a + b, 0);
-      if (sumAdj > amountCents) {
-        return {
-          ok: false,
-          error: `Adjustments can't exceed the total — you're over by $${((sumAdj - amountCents) / 100).toFixed(2)}.`,
-        };
-      }
-      owed = splitByAdjustment(amountCents, participants, adjustments);
-      if (Object.values(owed).some((c) => c < 0)) {
-        return { ok: false, error: 'Someone would owe a negative amount — lower their adjustment.' };
-      }
-    } else {
-      const weights = Object.fromEntries(
-        participants.map((id) => [id, e.weights?.[id] ?? 0]),
-      );
-      if (Object.values(weights).every((w) => w <= 0)) {
-        return { ok: false, error: 'Give at least one person a share.' };
-      }
-      owed = splitByWeight(amountCents, weights);
-    }
+    const result = computeSplits(e.split_kind, amountCents, participants, e.weights);
+    if (!result.ok) return result;
+    owed = result.owed;
 
     const { data: expense, error } = await supabase
       .from('expenses')
@@ -390,6 +407,97 @@ export async function addExpense(input: ExpenseInputType): Promise<ActionResult>
         notifyProfiles([id], {
           title: `${e.description} — $${(amountCents / 100).toFixed(2)}`,
           body: `${me.full_name} paid. Your share is $${((owed[id] ?? 0) / 100).toFixed(2)}.`,
+          url: '/expenses',
+          tag: `expense-${expenseId}`,
+        }),
+      ),
+  );
+
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+export async function updateExpense(expenseId: string, input: ExpenseInputType): Promise<ActionResult> {
+  const parsed = ExpenseInput.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid expense.' };
+  }
+  const e = parsed.data;
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'Not signed in.' };
+
+  const { data: me } = await supabase
+    .from('profiles').select('household_id, full_name').eq('id', user.id)
+    .single<{ household_id: string; full_name: string }>();
+  if (!me?.household_id) return { ok: false, error: 'No household.' };
+
+  let owed: Record<string, number>;
+  let amountCents: number;
+
+  if (e.items && e.items.length > 0) {
+    for (const item of e.items) {
+      const sum = item.splits.reduce((a, s) => a + s.owed_cents, 0);
+      if (sum !== item.amount_cents) {
+        return { ok: false, error: `"${item.name}"'s splits must add up to its amount.` };
+      }
+    }
+
+    const { data: expense, error } = await supabase.rpc('update_expense', {
+      p_expense_id: expenseId,
+      p_description: e.description,
+      p_paid_by: e.paid_by,
+      p_spent_on: e.spent_on,
+      p_items: e.items,
+      p_category: e.category,
+      p_receipt_url: e.receipt_url ?? null,
+      p_note: e.note ?? null,
+    });
+    if (error || !expense) return { ok: false, error: error?.message ?? 'Could not save.' };
+    amountCents = expense.amount_cents;
+
+    const { data: splits } = await supabase
+      .from('expense_splits')
+      .select('profile_id, owed_cents')
+      .eq('expense_id', expenseId);
+    owed = Object.fromEntries((splits ?? []).map((s) => [s.profile_id, s.owed_cents]));
+  } else {
+    amountCents = parseDollars(e.amount ?? '') ?? 0;
+    if (amountCents <= 0) return { ok: false, error: 'Enter an amount greater than zero.' };
+
+    const participants = e.participants ?? [];
+    if (participants.length === 0) return { ok: false, error: 'Split it with someone.' };
+
+    const result = computeSplits(e.split_kind, amountCents, participants, e.weights);
+    if (!result.ok) return result;
+    owed = result.owed;
+
+    const { data: expense, error } = await supabase.rpc('update_expense', {
+      p_expense_id: expenseId,
+      p_description: e.description,
+      p_paid_by: e.paid_by,
+      p_spent_on: e.spent_on,
+      p_category: e.category,
+      p_receipt_url: e.receipt_url ?? null,
+      p_note: e.note ?? null,
+      p_split_kind: e.split_kind,
+      p_splits: participants.map((id) => ({
+        profile_id: id,
+        owed_cents: owed[id] ?? 0,
+        weight: e.weights?.[id] ?? null,
+      })),
+    });
+    if (error || !expense) return { ok: false, error: error?.message ?? 'Could not save.' };
+  }
+
+  await Promise.all(
+    Object.keys(owed)
+      .filter((id) => id !== user.id)
+      .map((id) =>
+        notifyProfiles([id], {
+          title: `Updated: ${e.description} — $${(amountCents / 100).toFixed(2)}`,
+          body: `${me.full_name} edited this. Your share is now $${((owed[id] ?? 0) / 100).toFixed(2)}.`,
           url: '/expenses',
           tag: `expense-${expenseId}`,
         }),

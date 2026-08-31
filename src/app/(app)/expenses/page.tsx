@@ -5,6 +5,7 @@ import { Icon } from '@/components/brand';
 import { formatCents, simplifyDebts } from '@/lib/money';
 import { formatCalendarDate } from '@/lib/timezone';
 import { SettleUpButton } from './settle-up';
+import { ExpenseRowActions } from './expense-row-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -184,12 +185,19 @@ export default async function ExpensesPage() {
               );
 
               if (itemCount === 0) {
-                return <div key={e.id}>{summary}</div>;
+                return (
+                  <div key={e.id}>
+                    {summary}
+                    <div className="px-4 pb-3 -mt-1">
+                      <ExpenseRowActions expenseId={e.id} />
+                    </div>
+                  </div>
+                );
               }
 
               return (
                 <details key={e.id}>
-                  <summary className="cursor-pointer [&::-webkit-details-marker]:hidden marker:hidden">
+                  <summary className="block cursor-pointer list-none [&::-webkit-details-marker]:hidden marker:hidden">
                     {summary}
                   </summary>
                   <div className="px-4 pb-3 pl-[4.25rem] -mt-1 space-y-1.5">
@@ -212,6 +220,9 @@ export default async function ExpensesPage() {
                         </span>
                       </div>
                     ))}
+                  </div>
+                  <div className="px-4 pb-3 pl-[4.25rem] -mt-1">
+                    <ExpenseRowActions expenseId={e.id} />
                   </div>
                 </details>
               );

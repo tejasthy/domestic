@@ -172,6 +172,26 @@ export async function getExpenses(limit = 50): Promise<ExpenseWithSplits[]> {
   return data ?? [];
 }
 
+export async function getExpense(id: string): Promise<ExpenseWithSplits | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('expenses')
+    .select(`
+      *,
+      splits:expense_splits ( expense_id, profile_id, owed_cents, weight ),
+      payer:profiles!expenses_paid_by_fkey ( id, full_name, initials, color ),
+      items:expense_items (
+        id, expense_id, name, amount_cents, kind, split_kind, position, created_at,
+        item_splits:expense_item_splits ( expense_item_id, profile_id, owed_cents, weight )
+      )
+    `)
+    .eq('id', id)
+    .is('deleted_at', null)
+    .order('position', { referencedTable: 'expense_items' })
+    .single<ExpenseWithSplits>();
+  return data ?? null;
+}
+
 export type RecurringExpenseWithParticipants = RecurringExpense & {
   participants: RecurringExpenseParticipant[];
 };
