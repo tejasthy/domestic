@@ -11,7 +11,7 @@ create extension if not exists "pgcrypto";
 
 -- ---------------------------------------------------------------- households
 
-create table households (
+create table if not exists households (
   id          uuid primary key default gen_random_uuid(),
   name        text        not null,
   address     text,
@@ -19,7 +19,7 @@ create table households (
   created_at  timestamptz not null default now()
 );
 
-create table profiles (
+create table if not exists profiles (
   id            uuid primary key references auth.users(id) on delete cascade,
   household_id  uuid        references households(id) on delete set null,
   full_name     text        not null,
@@ -36,14 +36,20 @@ create table profiles (
   created_at    timestamptz not null default now()
 );
 
-create index on profiles (household_id);
+create index if not exists profiles_household_id_idx on profiles (household_id);
 
 -- ------------------------------------------------------------------- chores
 
-create type chore_cadence as enum ('scheduled', 'on_demand');
-create type turn_status   as enum ('pending', 'done', 'skipped', 'missed');
+do $$ begin
+  create type chore_cadence as enum ('scheduled', 'on_demand');
+exception when duplicate_object then null;
+end $$;
+do $$ begin
+  create type turn_status as enum ('pending', 'done', 'skipped', 'missed');
+exception when duplicate_object then null;
+end $$;
 
-create table chores (
+create table if not exists chores (
   id             uuid primary key default gen_random_uuid(),
   household_id   uuid not null references households(id) on delete cascade,
   name           text not null,
@@ -69,10 +75,10 @@ create table chores (
   created_at     timestamptz not null default now()
 );
 
-create index on chores (household_id, is_active);
+create index if not exists chores_household_id_is_active_idx on chores (household_id, is_active);
 
 -- The rotation order for a chore. `position` is 0-based and defines the cycle.
-create table chore_rotation (
+create table if not exists chore_rotation (
   chore_id    uuid     not null references chores(id) on delete cascade,
   profile_id  uuid     not null references profiles(id) on delete cascade,
   position    smallint not null,
@@ -81,7 +87,7 @@ create table chore_rotation (
 );
 
 -- One row = one box on the paper chart.
-create table chore_turns (
+create table if not exists chore_turns (
   id            uuid primary key default gen_random_uuid(),
   chore_id      uuid     not null references chores(id) on delete cascade,
   household_id  uuid     not null references households(id) on delete cascade,
@@ -96,12 +102,12 @@ create table chore_turns (
   unique (chore_id, turn_number)
 );
 
-create index on chore_turns (household_id, status, due_at);
-create index on chore_turns (chore_id, status, turn_number);
-create index on chore_turns (assignee_id, status);
+create index if not exists chore_turns_household_id_status_due_at_idx on chore_turns (household_id, status, due_at);
+create index if not exists chore_turns_chore_id_status_turn_number_idx on chore_turns (chore_id, status, turn_number);
+create index if not exists chore_turns_assignee_id_status_idx on chore_turns (assignee_id, status);
 
 -- Swap a turn with another roommate. Requires the other person to accept.
-create table chore_swaps (
+create table if not exists chore_swaps (
   id            uuid primary key default gen_random_uuid(),
   turn_id       uuid not null references chore_turns(id) on delete cascade,
   requested_by  uuid not null references profiles(id) on delete cascade,
@@ -113,13 +119,16 @@ create table chore_swaps (
   resolved_at   timestamptz
 );
 
-create index on chore_swaps (requested_to, status);
+create index if not exists chore_swaps_requested_to_status_idx on chore_swaps (requested_to, status);
 
 -- ----------------------------------------------------------------- expenses
 
-create type split_kind as enum ('equal', 'exact', 'shares', 'percent');
+do $$ begin
+  create type split_kind as enum ('equal', 'exact', 'shares', 'percent');
+exception when duplicate_object then null;
+end $$;
 
-create table expenses (
+create table if not exists expenses (
   id            uuid primary key default gen_random_uuid(),
   household_id  uuid not null references households(id) on delete cascade,
   description   text not null,
@@ -137,11 +146,11 @@ create table expenses (
   deleted_at    timestamptz
 );
 
-create index on expenses (household_id, spent_on desc) where deleted_at is null;
+create index if not exists expenses_household_id_spent_on_desc_idx on expenses (household_id, spent_on desc) where deleted_at is null;
 
 -- Who owes what on a given expense. owed_cents across an expense must sum to
 -- amount_cents; enforced in the app + a deferred trigger below.
-create table expense_splits (
+create table if not exists expense_splits (
   expense_id  uuid   not null references expenses(id) on delete cascade,
   profile_id  uuid   not null references profiles(id) on delete cascade,
   owed_cents  bigint not null check (owed_cents >= 0),
@@ -150,7 +159,7 @@ create table expense_splits (
 );
 
 -- A real transfer of money between two roommates (Venmo, cash, etc).
-create table settlements (
+create table if not exists settlements (
   id            uuid primary key default gen_random_uuid(),
   household_id  uuid not null references households(id) on delete cascade,
   from_profile  uuid not null references profiles(id) on delete restrict,
@@ -164,11 +173,11 @@ create table settlements (
   check (from_profile <> to_profile)
 );
 
-create index on settlements (household_id, settled_on desc);
+create index if not exists settlements_household_id_settled_on_desc_idx on settlements (household_id, settled_on desc);
 
 -- ------------------------------------------------------- devices & activity
 
-create table push_subscriptions (
+create table if not exists push_subscriptions (
   id          uuid primary key default gen_random_uuid(),
   profile_id  uuid not null references profiles(id) on delete cascade,
   endpoint    text not null unique,
@@ -179,10 +188,10 @@ create table push_subscriptions (
   last_used_at timestamptz
 );
 
-create index on push_subscriptions (profile_id);
+create index if not exists push_subscriptions_profile_id_idx on push_subscriptions (profile_id);
 
 -- The iPad on the wall. Authenticates with a bearer token instead of a user.
-create table kiosk_devices (
+create table if not exists kiosk_devices (
   id            uuid primary key default gen_random_uuid(),
   household_id  uuid not null references households(id) on delete cascade,
   name          text not null,
@@ -191,7 +200,7 @@ create table kiosk_devices (
   created_at    timestamptz not null default now()
 );
 
-create table activity_log (
+create table if not exists activity_log (
   id            bigserial primary key,
   household_id  uuid not null references households(id) on delete cascade,
   actor_id      uuid references profiles(id) on delete set null,
@@ -201,12 +210,12 @@ create table activity_log (
   created_at    timestamptz not null default now()
 );
 
-create index on activity_log (household_id, created_at desc);
+create index if not exists activity_log_household_id_created_at_desc_idx on activity_log (household_id, created_at desc);
 
 -- ------------------------------------------------------------------- views
 
 -- Net position per roommate. Positive => the household owes them money.
-create view v_balances with (security_invoker = true) as
+create or replace view v_balances with (security_invoker = true) as
 with paid as (
   select e.household_id, e.paid_by as profile_id, sum(e.amount_cents) as cents
   from expenses e where e.deleted_at is null
@@ -242,7 +251,7 @@ where p.household_id is not null;
 
 -- Running tally of completed turns per person per chore — the digital version
 -- of counting crossed-out initials on the sheet.
-create view v_chore_stats with (security_invoker = true) as
+create or replace view v_chore_stats with (security_invoker = true) as
 select
   t.household_id,
   t.chore_id,

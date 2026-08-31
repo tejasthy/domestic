@@ -93,7 +93,9 @@ $$;
 -- the 0004 signature first.
 drop function if exists create_household(text, text, text, text, text);
 
-create function create_household(
+-- `or replace` so this file can be applied twice without erroring; the drop
+-- above removes the 0004 five-argument signature, not this one.
+create or replace function create_household(
   p_name      text,
   p_address   text default null,
   p_timezone  text default 'America/Detroit',
