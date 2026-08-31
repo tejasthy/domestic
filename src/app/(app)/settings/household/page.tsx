@@ -4,7 +4,10 @@ import { getSession, getInvites, getKioskDevices } from '@/lib/data';
 import { getAiConfigSummary } from '@/lib/household-actions';
 import { MODULES } from '@/lib/modules';
 import { Card, SectionHeader, Initials, Pill } from '@/components/ui';
-import { MemberRow, InviteList, NewInvite, ModuleToggles, KioskDevices, AiConfig } from './admin';
+import {
+  MemberRow, InviteList, NewInvite, ModuleToggles, CrossCompleteToggle,
+  LocationSetting, KioskDevices, AiConfig,
+} from './admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -120,6 +123,11 @@ export default async function HouseholdSettingsPage() {
       </section>
 
       <section>
+        <SectionHeader title="Who can complete what" />
+        <CrossCompleteToggle enabled={household.allow_member_cross_complete} />
+      </section>
+
+      <section>
         <SectionHeader title="Receipt scanning" />
         <AiConfig summary={aiConfig} />
       </section>
@@ -127,13 +135,16 @@ export default async function HouseholdSettingsPage() {
       {modules.includes('kiosk') && (
         <section>
           <SectionHeader title="Wall display" />
-          <KioskDevices
-            devices={kiosks.map((k) => ({
-              id: k.id,
-              name: k.name,
-              lastSeenAt: k.last_seen_at,
-            }))}
-          />
+          <div className="space-y-3">
+            <LocationSetting label={household.location_label} />
+            <KioskDevices
+              devices={kiosks.map((k) => ({
+                id: k.id,
+                name: k.name,
+                lastSeenAt: k.last_seen_at,
+              }))}
+            />
+          </div>
         </section>
       )}
     </div>

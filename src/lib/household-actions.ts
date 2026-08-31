@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
+import { geocodeLocation } from '@/lib/weather';
 import type { ActionResult } from '@/lib/actions';
 import type { HouseholdInvite } from '@/lib/types';
 
@@ -146,6 +147,34 @@ export async function setModule(module: string, enabled: boolean): Promise<Actio
   if (error) return fail(error, 'Could not change that.');
   revalidatePath('/', 'layout');
   return { ok: true };
+}
+
+/* -------------------------------------------------------- admin: permissions */
+
+export async function setCrossComplete(enabled: boolean): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('set_cross_complete', { p_enabled: enabled });
+  if (error) return fail(error, 'Could not change that.');
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+/* -------------------------------------------------------------- admin: weather */
+
+export async function setHouseholdLocation(query: string): Promise<ActionResult & { label?: string }> {
+  const place = await geocodeLocation(query);
+  if (!place) return { ok: false, error: "Couldn't find that place — try a city and state." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('set_household_location', {
+    p_label: place.label,
+    p_lat: place.lat,
+    p_lon: place.lon,
+  });
+  if (error) return fail(error, 'Could not save that location.');
+  revalidatePath('/settings/household');
+  revalidatePath('/kiosk');
+  return { ok: true, label: place.label };
 }
 
 /* --------------------------------------------------------------- admin: kiosk */

@@ -25,16 +25,20 @@ function dueLabel(turn: Turn) {
 export function TurnRow({
   turn,
   mine,
+  crossComplete = false,
   className,
 }: {
   turn: Turn;
   mine: boolean;
+  /** Household setting: anyone can complete anyone's turn. */
+  crossComplete?: boolean;
   className?: string;
 }) {
   const [pending, start] = useTransition();
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const due = dueLabel(turn);
+  const canComplete = mine || crossComplete;
 
   function onComplete() {
     setError(null);
@@ -87,15 +91,19 @@ export function TurnRow({
           </div>
         </div>
 
-        {mine && (
+        {canComplete && (
           <Button
             size="md"
             onClick={onComplete}
             disabled={pending}
-            aria-label={`Mark ${turn.chore.name} done`}
+            aria-label={
+              mine
+                ? `Mark ${turn.chore.name} done`
+                : `Mark ${turn.chore.name} done for ${turn.assignee.full_name.split(' ')[0]}`
+            }
           >
             <Icon.Check size={18} />
-            Done
+            {mine ? 'Done' : `For ${turn.assignee.full_name.split(' ')[0]}`}
           </Button>
         )}
       </div>

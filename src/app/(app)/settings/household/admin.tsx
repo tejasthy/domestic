@@ -3,7 +3,8 @@
 import { useState, useTransition } from 'react';
 import {
   clearAiConfig, createInvite, createKioskDevice, removeMember,
-  revokeInvite, setAiConfig, setMemberAdmin, setModule,
+  revokeInvite, setAiConfig, setCrossComplete, setHouseholdLocation,
+  setMemberAdmin, setModule,
 } from '@/lib/household-actions';
 import { Button, Card, Field, Initials, Input, Pill, Select, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
@@ -413,7 +414,101 @@ export function ModuleToggles({
   );
 }
 
+/* --------------------------------------------------------------- permissions */
+
+export function CrossCompleteToggle({ enabled }: { enabled: boolean }) {
+  const [pending, start] = useTransition();
+  const [on, setOn] = useState(enabled);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        disabled={pending}
+        onClick={() => {
+          setError(null);
+          const next = !on;
+          setOn(next);
+          start(async () => {
+            const res = await setCrossComplete(next);
+            if (!res.ok) {
+              setOn(!next);
+              setError(res.error);
+            }
+          });
+        }}
+        className="w-full flex items-start gap-3 px-4 py-3.5 text-left rounded-lg border border-line bg-card hover:bg-hover transition-colors duration-[120ms]"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="t-title-md text-ink block">Anyone can complete anyone&rsquo;s chores</span>
+          <span className="t-body-sm text-ink-muted block mt-0.5">
+            Off means only the person a turn is assigned to can mark it done.
+          </span>
+        </span>
+        <span
+          className={cx(
+            'w-11 h-6 rounded-pill shrink-0 mt-0.5 relative transition-colors duration-[180ms]',
+            on ? 'bg-blue dark:bg-maize' : 'bg-line',
+          )}
+          aria-hidden
+        >
+          <span
+            className={cx(
+              'absolute top-0.5 w-5 h-5 rounded-pill bg-white shadow-xs',
+              'transition-[left] duration-[180ms]',
+              on ? 'left-[22px]' : 'left-0.5',
+            )}
+          />
+        </span>
+      </button>
+      {error && <p className="t-body-sm text-danger mt-2">{error}</p>}
+    </>
+  );
+}
+
 /* -------------------------------------------------------------------- kiosk */
+
+export function LocationSetting({ label }: { label: string | null }) {
+  const [pending, start] = useTransition();
+  const [query, setQuery] = useState('');
+  const [current, setCurrent] = useState(label);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <Card className="p-4 space-y-3">
+      {current && <p className="t-body-md text-ink">{current}</p>}
+      <Field label={current ? 'Change it' : 'City'} hint="Used for the kiosk weather widget.">
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Ann Arbor, MI"
+        />
+      </Field>
+      {error && <p className="t-body-sm text-danger">{error}</p>}
+      <Button
+        size="md"
+        disabled={pending || !query.trim()}
+        onClick={() => {
+          setError(null);
+          start(async () => {
+            const res = await setHouseholdLocation(query);
+            if (res.ok) {
+              setCurrent(res.label ?? current);
+              setQuery('');
+            } else {
+              setError(res.error);
+            }
+          });
+        }}
+      >
+        {pending ? 'Saving…' : 'Save'}
+      </Button>
+    </Card>
+  );
+}
 
 export function KioskDevices({
   devices,

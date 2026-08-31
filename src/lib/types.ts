@@ -16,6 +16,10 @@ export type Household = {
   name: string;
   address: string | null;
   timezone: string;
+  allow_member_cross_complete: boolean;
+  location_label: string | null;
+  latitude: number | null;
+  longitude: number | null;
   created_at: string;
 };
 
@@ -213,6 +217,15 @@ export type KioskDevice = {
   created_at: string;
 };
 
+export type KioskMessage = {
+  id: string;
+  household_id: string;
+  author_id: string | null;
+  body: string;
+  created_at: string;
+  expires_at: string;
+};
+
 export type ActivityEntry = {
   id: number;
   household_id: string;
@@ -252,7 +265,8 @@ type Defaulted =
   | 'emoji' | 'days_of_week' | 'interval_weeks' | 'anchor_date' | 'due_hour'
   | 'queue_depth' | 'lookahead_days' | 'sort_order' | 'is_active' | 'status'
   | 'spent_on' | 'settled_on' | 'split_kind' | 'category' | 'method'
-  | 'metadata' | 'turn_number' | 'position' | 'interval_months' | 'next_run_on';
+  | 'metadata' | 'turn_number' | 'position' | 'interval_months' | 'next_run_on'
+  | 'allow_member_cross_complete' | 'expires_at';
 
 /** Nullable columns are optional on insert too — Postgres fills them with NULL. */
 type NullableKeys<Row> = {
@@ -290,6 +304,7 @@ export type Database = {
       kiosk_devices: Table<KioskDevice>;
       household_invites: Table<HouseholdInvite>;
       household_modules: Table<HouseholdModule>;
+      kiosk_messages: Table<KioskMessage>;
       activity_log: Table<ActivityEntry>;
     };
     Views: {
@@ -455,6 +470,27 @@ export type Database = {
       get_ai_credentials: {
         Args: { p_secret: string };
         Returns: { provider: AiProvider; api_key: string }[];
+      };
+      set_cross_complete: { Args: { p_enabled: boolean }; Returns: undefined };
+      set_household_location: {
+        Args: { p_label: string | null; p_lat: number | null; p_lon: number | null };
+        Returns: undefined;
+      };
+      kiosk_complete_turn: {
+        Args: { p_household: string; p_turn: string; p_profile: string; p_note?: string | null };
+        Returns: ChoreTurn;
+      };
+      kiosk_flag_chore: {
+        Args: { p_household: string; p_chore: string; p_profile: string };
+        Returns: ChoreTurn;
+      };
+      kiosk_respond_swap: {
+        Args: { p_household: string; p_swap: string; p_profile: string; p_accept: boolean };
+        Returns: undefined;
+      };
+      kiosk_set_chore_active: {
+        Args: { p_household: string; p_chore: string; p_profile: string; p_active: boolean };
+        Returns: undefined;
       };
     };
     Enums: {

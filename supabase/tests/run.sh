@@ -49,8 +49,10 @@ echo "  ok  pgcrypto in extensions + app role created (as in Supabase)"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0009_chore_admin.sql" && echo "  ok  0009_chore_admin.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0010_recurring_expenses.sql" && echo "  ok  0010_recurring_expenses.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0011_ai_config.sql" && echo "  ok  0011_ai_config.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0012_kiosk_interactivity.sql" && echo "  ok  0012_kiosk_interactivity.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0013_split_adjustment.sql" && echo "  ok  0013_split_adjustment.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0014_expense_items.sql" && echo "  ok  0014_expense_items.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0015_lock_kiosk_rpcs_from_anon.sql" && echo "  ok  0015_lock_kiosk_rpcs_from_anon.sql"
 
 # Only the auth-schema grants are left to do; everything in `public` came from
 # the default privileges set above, so 0004's column-level revoke still stands.

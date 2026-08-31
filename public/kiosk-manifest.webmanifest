@@ -1,0 +1,16 @@
+{
+  "name": "Domestic Kiosk",
+  "short_name": "Kiosk",
+  "description": "Wall display for the house.",
+  "start_url": "/kiosk",
+  "scope": "/kiosk",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#f7f8f9",
+  "theme_color": "#00274c",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
