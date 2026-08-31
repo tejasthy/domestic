@@ -42,8 +42,11 @@ export default async function TodayPage() {
       .returns<{ id: string; message: string | null; requester: { full_name: string }; turn: { chore: { name: string } } }[]>(),
   ]);
 
+  // Only a turn with a real due date is actually "up" — an on-demand chore's
+  // queued-but-unflagged turns (due_at null, bucket 'anytime') are just
+  // holding a place in line, not yet needed.
   const mine = turns.filter((t) => t.assignee_id === me.id);
-  const mineNow = mine.filter((t) => ['overdue', 'today', 'anytime'].includes(bucketFor(t.due_at)));
+  const mineNow = mine.filter((t) => ['overdue', 'today'].includes(bucketFor(t.due_at)));
   const mineLater = mine.filter((t) => !mineNow.includes(t));
   const theirs = turns.filter((t) => t.assignee_id !== me.id);
 
