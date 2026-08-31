@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore, useTransition } from 'react'
 import { useRouter } from 'next/navigation';
 import { createHousehold, joinHousehold, peekInvite } from '@/lib/household-actions';
 import { Button, Card, Field, Input, cx } from '@/components/ui';
+import { AddressField } from '@/components/address-field';
 
 type ModuleOption = {
   key: string;
@@ -123,13 +124,7 @@ function CreateForm({
           />
         </Field>
 
-        <Field label="Address" hint="Optional.">
-          <Input
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="526 Detroit St., Ann Arbor, MI"
-          />
-        </Field>
+        <AddressField value={address} onChange={setAddress} />
       </Card>
 
       <Card className="p-4 grid grid-cols-[1fr_auto] gap-3">

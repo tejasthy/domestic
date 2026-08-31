@@ -26,7 +26,11 @@ export async function GET(request: NextRequest) {
     const description = searchParams.get('error_description');
     console.error('[auth] provider returned an error', providerError, description);
 
-    if (/signup.*disabled|disabled.*signup/i.test(`${providerError} ${description}`)) {
+    // Supabase's actual wording is "Signups not allowed for this instance",
+    // which an is-it-disabled pattern misses.
+    if (/signups?[\s_-]*(not allowed|disabled)|disabled.*signup/i.test(
+      `${providerError} ${description}`,
+    )) {
       return fail('signups_disabled');
     }
     return fail('provider', description ?? providerError);
@@ -40,7 +44,9 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error('[auth] code exchange failed', error.status, error.message);
-    if (/signup|not allowed/i.test(error.message)) return fail('signups_disabled');
+    if (/signups?[\s_-]*(not allowed|disabled)/i.test(error.message)) {
+      return fail('signups_disabled');
+    }
     return fail('exchange', error.message);
   }
 
