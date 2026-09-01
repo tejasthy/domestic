@@ -377,3 +377,8 @@ hue, and the same radius/shadow/motion ramps. Tokens live at the top of
 `src/app/globals.css`; the semantic layer under them is what every component
 actually references, so re-theming is one block of variables. Light and dark
 both ship.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Run your own copy, change it, deploy it for your
+own house. Nothing here is hardcoded to one household.
