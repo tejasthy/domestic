@@ -42,14 +42,18 @@ export async function sendMagicLink(_prev: unknown, formData: FormData): Promise
   if (!z.string().email().safeParse(email).success) {
     return { ok: false, error: 'That does not look like an email address.' };
   }
+  const captchaToken = String(formData.get('captchaToken') ?? '') || undefined;
+  const next = String(formData.get('next') ?? '/home');
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
-      // Everyone is invited by the seed script; nobody self-registers.
-      shouldCreateUser: false,
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=${encodeURIComponent(next)}`,
+      // Anyone can sign up; household membership is still gated separately —
+      // by an invite code (redeem_invite) or by starting a new house.
+      shouldCreateUser: true,
+      captchaToken,
     },
   });
 
@@ -95,7 +99,7 @@ export async function completeTurn(turnId: string, note?: string): Promise<Actio
       await notifyProfiles([next.assignee_id], {
         title: `${turn.chore.emoji} You're up: ${turn.chore.name}`,
         body: 'The rotation just moved to you.',
-        url: '/',
+        url: '/home',
         tag: `chore-${turn.chore_id}`,
       });
     }
@@ -135,7 +139,7 @@ export async function skipTurn(turnId: string, note?: string): Promise<ActionRes
       await notifyProfiles([next.assignee_id], {
         title: `${turn.chore.emoji} You're up: ${turn.chore.name}`,
         body: 'The rotation just moved to you.',
-        url: '/',
+        url: '/home',
         tag: `chore-${turn.chore_id}`,
       });
     }
@@ -173,7 +177,7 @@ export async function passTurn(turnId: string, note?: string): Promise<ActionRes
       await notifyProfiles([next.assignee_id], {
         title: `${turn.chore.emoji} You're up: ${turn.chore.name}`,
         body: `${turn.chore.name} was passed to you.`,
-        url: '/',
+        url: '/home',
         tag: `chore-${turn.chore_id}`,
       });
     }
@@ -212,7 +216,7 @@ export async function flagChore(choreId: string): Promise<ActionResult> {
     await notifyProfiles([data.assignee_id], {
       title: `${chore.emoji} ${chore.name} — you're up`,
       body: 'Someone flagged it as ready.',
-      url: '/',
+      url: '/home',
       tag: `chore-${choreId}`,
     });
   }

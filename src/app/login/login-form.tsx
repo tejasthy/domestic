@@ -1,9 +1,11 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { sendMagicLink } from '@/lib/actions';
 import { createClient } from '@/lib/supabase/client';
 import { Button, Field, Input, cx } from '@/components/ui';
+import { Turnstile, type TurnstileHandle } from '@/components/turnstile';
 
 function GoogleMark() {
   return (
@@ -22,12 +24,28 @@ function GoogleMark() {
  * path stays off until someone configures a real sender.
  */
 const MAGIC_LINK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_MAGIC_LINK === 'true';
+const CAPTCHA_ENABLED = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
-export function LoginForm() {
-  const [state, action, pending] = useActionState(sendMagicLink, null);
-  const [showEmail, setShowEmail] = useState(false);
+type PasswordMode = 'signin' | 'signup' | 'forgot';
+
+export function LoginForm({ next = '/home' }: { next?: string }) {
+  const [magicState, sendMagicLinkAction, magicPending] = useActionState(sendMagicLink, null);
+  const [showEmailLink, setShowEmailLink] = useState(false);
   const [oauthPending, setOauthPending] = useState(false);
   const [oauthError, setOauthError] = useState<string | null>(null);
+
+  const router = useRouter();
+  const [mode, setMode] = useState<PasswordMode>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+
+  const [captchaToken, setCaptchaToken] = useState('');
+  const turnstileRef = useRef<TurnstileHandle>(null);
+  const magicTurnstileRef = useRef<TurnstileHandle>(null);
+  const [magicCaptchaToken, setMagicCaptchaToken] = useState('');
 
   async function signInWithGoogle() {
     setOauthError(null);
@@ -35,7 +53,7 @@ export function LoginForm() {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
     });
     // On success the browser has already navigated away; only failures land here.
     if (error) {
@@ -44,7 +62,88 @@ export function LoginForm() {
     }
   }
 
-  if (state?.ok) {
+  async function submitPasswordForm(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    if (CAPTCHA_ENABLED && !captchaToken) {
+      setError('Complete the verification below.');
+      return;
+    }
+
+    setPending(true);
+    const supabase = createClient();
+
+    if (mode === 'forgot') {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+        captchaToken: captchaToken || undefined,
+      });
+      setPending(false);
+      turnstileRef.current?.reset();
+      setCaptchaToken('');
+      if (error) setError(error.message);
+      else setSent(true);
+      return;
+    }
+
+    if (mode === 'signup') {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+          captchaToken: captchaToken || undefined,
+        },
+      });
+      setPending(false);
+      turnstileRef.current?.reset();
+      setCaptchaToken('');
+      if (error) {
+        setError(error.message);
+        return;
+      }
+      if (data.session) {
+        // Email confirmation is off for this project — already signed in.
+        router.push(next);
+        router.refresh();
+      } else {
+        setSent(true);
+      }
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: { captchaToken: captchaToken || undefined },
+    });
+    setPending(false);
+    turnstileRef.current?.reset();
+    setCaptchaToken('');
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    router.push(next);
+    router.refresh();
+  }
+
+  if (sent) {
+    return (
+      <div className="bg-card border border-subtle rounded-lg p-5 text-center shadow-xs">
+        <div className="text-3xl mb-2" aria-hidden>📬</div>
+        <p className="t-title-md text-ink">Check your email</p>
+        <p className="t-body-sm text-ink-muted mt-1">
+          {mode === 'forgot'
+            ? 'Tap the link to pick a new password. It expires in an hour.'
+            : 'Tap the link to confirm your account, then come back and sign in.'}
+        </p>
+      </div>
+    );
+  }
+
+  if (magicState?.ok) {
     return (
       <div className="bg-card border border-subtle rounded-lg p-5 text-center shadow-xs">
         <div className="text-3xl mb-2" aria-hidden>📬</div>
@@ -75,13 +174,113 @@ export function LoginForm() {
 
       {oauthError && <p className="t-body-sm text-danger">{oauthError}</p>}
 
-      {!MAGIC_LINK_ENABLED ? null : !showEmail ? (
+      <div className="flex items-center gap-3 py-1">
+        <span className="h-px flex-1 bg-subtle" />
+        <span className="t-caption text-ink-muted">or</span>
+        <span className="h-px flex-1 bg-subtle" />
+      </div>
+
+      {mode !== 'forgot' && (
+        <div className="grid grid-cols-2 gap-1 p-1 bg-sunken rounded-lg">
+          {(['signin', 'signup'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => {
+                setMode(m);
+                setError(null);
+              }}
+              aria-pressed={mode === m}
+              className={cx(
+                'h-9 rounded-md t-body-sm font-semibold transition-colors duration-[120ms]',
+                mode === m ? 'bg-card text-ink shadow-xs' : 'text-ink-muted hover:text-ink',
+              )}
+            >
+              {m === 'signin' ? 'Sign in' : 'Create account'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <form onSubmit={submitPasswordForm} className="space-y-3">
+        <Field label="Email">
+          <Input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            autoCapitalize="none"
+            placeholder="you@example.com"
+            required
+          />
+        </Field>
+
+        {mode !== 'forgot' && (
+          <Field
+            label="Password"
+            hint={mode === 'signup' ? 'At least 8 characters.' : undefined}
+          >
+            <Input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+              minLength={mode === 'signup' ? 8 : undefined}
+              required
+            />
+          </Field>
+        )}
+
+        {CAPTCHA_ENABLED && (
+          <Turnstile ref={turnstileRef} onVerify={setCaptchaToken} />
+        )}
+
+        {error && <p className="t-body-sm text-danger">{error}</p>}
+
+        <Button type="submit" size="lg" tone="secondary" full disabled={pending}>
+          {pending
+            ? 'Working…'
+            : mode === 'signup'
+              ? 'Create account'
+              : mode === 'forgot'
+                ? 'Send reset link'
+                : 'Sign in'}
+        </Button>
+
+        {mode === 'signin' && (
+          <button
+            type="button"
+            onClick={() => {
+              setMode('forgot');
+              setError(null);
+            }}
+            className="w-full t-body-sm text-ink-muted hover:text-ink py-1 transition-colors"
+          >
+            Forgot password?
+          </button>
+        )}
+        {mode === 'forgot' && (
+          <button
+            type="button"
+            onClick={() => {
+              setMode('signin');
+              setError(null);
+            }}
+            className="w-full t-body-sm text-ink-muted hover:text-ink py-1 transition-colors"
+          >
+            Back to sign in
+          </button>
+        )}
+      </form>
+
+      {!MAGIC_LINK_ENABLED ? null : !showEmailLink ? (
         <button
           type="button"
-          onClick={() => setShowEmail(true)}
+          onClick={() => setShowEmailLink(true)}
           className="w-full t-body-sm text-ink-muted hover:text-ink py-2 transition-colors"
         >
-          Use an email link instead
+          Email me a sign-in link instead
         </button>
       ) : (
         <>
@@ -91,7 +290,8 @@ export function LoginForm() {
             <span className="h-px flex-1 bg-subtle" />
           </div>
 
-          <form action={action} className="space-y-3">
+          <form action={sendMagicLinkAction} className="space-y-3">
+            <input type="hidden" name="next" value={next} />
             <Field label="Email">
               <Input
                 name="email"
@@ -99,16 +299,22 @@ export function LoginForm() {
                 inputMode="email"
                 autoComplete="email"
                 autoCapitalize="none"
-                placeholder="you@umich.edu"
+                placeholder="you@example.com"
                 required
-                autoFocus
               />
             </Field>
 
-            {state?.ok === false && <p className="t-body-sm text-danger">{state.error}</p>}
+            {CAPTCHA_ENABLED && (
+              <>
+                <input type="hidden" name="captchaToken" value={magicCaptchaToken} />
+                <Turnstile ref={magicTurnstileRef} onVerify={setMagicCaptchaToken} />
+              </>
+            )}
 
-            <Button type="submit" size="lg" tone="secondary" full disabled={pending}>
-              {pending ? 'Sending…' : 'Email me a link'}
+            {magicState?.ok === false && <p className="t-body-sm text-danger">{magicState.error}</p>}
+
+            <Button type="submit" size="lg" tone="secondary" full disabled={magicPending}>
+              {magicPending ? 'Sending…' : 'Email me a link'}
             </Button>
           </form>
         </>

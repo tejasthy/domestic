@@ -28,9 +28,9 @@ const ERRORS: Record<string, { title: string; hint: string }> = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; detail?: string }>;
+  searchParams: Promise<{ error?: string; detail?: string; next?: string }>;
 }) {
-  const { error, detail } = await searchParams;
+  const { error, detail, next } = await searchParams;
   const problem = error ? (ERRORS[error] ?? ERRORS.exchange) : null;
 
   return (
@@ -41,7 +41,7 @@ export default async function LoginPage({
           <h1 className="t-display-lg uppercase tracking-[0.12em] text-ink mt-4">
             Domestic
           </h1>
-          <p className="t-body-md text-ink-muted mt-1">526 Detroit St.</p>
+          <p className="t-body-md text-ink-muted mt-1">Sign in to your house</p>
         </div>
 
         {problem && (
@@ -54,10 +54,10 @@ export default async function LoginPage({
           </div>
         )}
 
-        <LoginForm />
+        <LoginForm next={next || '/home'} />
 
         <p className="t-body-sm text-ink-muted text-center mt-6">
-          Four roommates, one fridge chart. No passwords.
+          The fridge chart, minus the guesswork.
         </p>
       </div>
     </main>
