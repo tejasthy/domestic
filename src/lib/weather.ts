@@ -137,8 +137,13 @@ export async function getWeather(lat: number, lon: number): Promise<Weather | nu
   const daily = data?.daily;
   const hourly = data?.hourly;
 
+  // current.time is sampled at 15-minute resolution (e.g. "…T13:30") but
+  // hourly.time only has on-the-hour entries (e.g. "…T13:00"), so an exact
+  // match against current.time always misses and silently falls back to
+  // midnight. Truncate to the hour first so "Now" lines up with reality.
+  const currentHour = `${current.time.slice(0, 13)}:00`;
   const hourTimes: string[] = hourly?.time ?? [];
-  const startIndex = Math.max(0, hourTimes.indexOf(current.time));
+  const startIndex = Math.max(0, hourTimes.indexOf(currentHour));
   const hourPoints: HourlyForecast[] = hourTimes.slice(startIndex, startIndex + 24).map((time, i) => {
     const idx = startIndex + i;
     const code = hourly.weather_code[idx];

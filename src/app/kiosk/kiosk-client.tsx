@@ -71,9 +71,13 @@ export function AutoRefresh({ seconds }: { seconds: number }) {
 /**
  * Who's standing at the kiosk right now. Tap-to-select, no PIN — the kiosk
  * lives inside the house, same trust model as a paper chart on the fridge.
- * Pure client state: it resets on the next auto-refresh, and nothing about it
- * ever touches the server until an action is actually taken.
+ * Pure client state: nothing about it ever touches the server until an
+ * action is actually taken. To keep one person's selection from lingering
+ * for whoever walks up next, it self-clears after ACTING_AS_TIMEOUT_MS of no
+ * taps/keypresses anywhere on the kiosk.
  */
+const ACTING_AS_TIMEOUT_MS = 2 * 60 * 1000;
+
 type ActingAsState = {
   actingId: string | null;
   setActingId: (id: string | null) => void;
@@ -89,6 +93,26 @@ function useActingAs() {
 
 export function ActingAsProvider({ children }: { children: React.ReactNode }) {
   const [actingId, setActingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!actingId) return;
+
+    let timeoutId: ReturnType<typeof setTimeout>;
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => setActingId(null), ACTING_AS_TIMEOUT_MS);
+    };
+
+    resetTimer();
+    window.addEventListener('pointerdown', resetTimer);
+    window.addEventListener('keydown', resetTimer);
+    return () => {
+      clearTimeout(timeoutId);
+      window.removeEventListener('pointerdown', resetTimer);
+      window.removeEventListener('keydown', resetTimer);
+    };
+  }, [actingId]);
+
   return (
     <ActingAsContext.Provider value={{ actingId, setActingId }}>
       {children}
@@ -479,8 +503,9 @@ export function KioskWeather({ weather }: { weather: Weather }) {
         aria-label="Show detailed weather"
         className="text-right rounded-lg -m-2 p-2 transition-colors duration-[120ms] hover:bg-hover active:bg-sunken"
       >
-        <p className="t-display-lg text-ink leading-none">
-          <span aria-hidden>{weather.emoji}</span> {weather.tempF}°
+        <p className="t-display-lg text-ink leading-none flex items-baseline justify-end gap-1">
+          <span aria-hidden className="text-[0.55em]">{weather.emoji}</span>
+          <span>{weather.tempF}°</span>
         </p>
         <p className="t-body-md text-ink-muted mt-1">{weather.label}</p>
       </button>
@@ -520,8 +545,9 @@ function KioskWeatherModal({ weather, onClose }: { weather: Weather; onClose: ()
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="t-display-lg text-ink leading-none">
-              <span aria-hidden>{weather.emoji}</span> {weather.tempF}°
+            <p className="t-display-lg text-ink leading-none flex items-baseline gap-1">
+              <span aria-hidden className="text-[0.55em]">{weather.emoji}</span>
+              <span>{weather.tempF}°</span>
             </p>
             <p className="t-body-md text-ink-muted mt-1">
               {weather.label} · H:{weather.highF}° L:{weather.lowF}°
