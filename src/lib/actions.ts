@@ -639,7 +639,9 @@ export type PaymentInputType = z.input<typeof PaymentInput>;
 /** Records a payment that already happened (Venmo, cash, etc.) — it does not
  * move any money. `created_by` may differ from both parties: anyone in the
  * household can log a payment on someone else's behalf. */
-export async function recordPayment(input: PaymentInputType): Promise<ActionResult> {
+export async function recordPayment(
+  input: PaymentInputType,
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const parsed = PaymentInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input.' };
   const { from_profile, to_profile, amount, paid_on, method, note } = parsed.data;
@@ -657,17 +659,21 @@ export async function recordPayment(input: PaymentInputType): Promise<ActionResu
     .single<{ household_id: string; full_name: string }>();
   if (!me?.household_id) return { ok: false, error: 'No household.' };
 
-  const { error } = await supabase.from('settlements').insert({
-    household_id: me.household_id,
-    from_profile,
-    to_profile,
-    amount_cents: cents,
-    settled_on: paid_on,
-    method,
-    note: note ?? null,
-    created_by: user.id,
-  });
-  if (error) return { ok: false, error: error.message };
+  const { data: settlement, error } = await supabase
+    .from('settlements')
+    .insert({
+      household_id: me.household_id,
+      from_profile,
+      to_profile,
+      amount_cents: cents,
+      settled_on: paid_on,
+      method,
+      note: note ?? null,
+      created_by: user.id,
+    })
+    .select('id')
+    .single<{ id: string }>();
+  if (error || !settlement) return { ok: false, error: error?.message ?? 'Could not record payment.' };
 
   if (to_profile !== user.id) {
     await notifyProfiles([to_profile], {
@@ -686,6 +692,16 @@ export async function recordPayment(input: PaymentInputType): Promise<ActionResu
     });
   }
 
+  revalidatePath('/', 'layout');
+  return { ok: true, id: settlement.id };
+}
+
+/** Undoes a recorded payment. Settlements have no soft-delete: the row is a
+ * plain ledger fact, so undoing it removes it outright. */
+export async function deleteSettlement(settlementId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.from('settlements').delete().eq('id', settlementId);
+  if (error) return { ok: false, error: error.message };
   revalidatePath('/', 'layout');
   return { ok: true };
 }

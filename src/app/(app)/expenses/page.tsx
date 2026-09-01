@@ -6,6 +6,7 @@ import { formatCents, simplifyDebts } from '@/lib/money';
 import { formatCalendarDate } from '@/lib/timezone';
 import { SettleUpButton } from './settle-up';
 import { ExpenseRowActions } from './expense-row-actions';
+import { SettlementRowActions } from './settlement-row-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -260,6 +261,7 @@ export default async function ExpensesPage() {
                   <span className="t-body-sm text-ink-muted w-14 text-right shrink-0">
                     {formatCalendarDate(s.settled_on, { month: 'short', day: 'numeric' })}
                   </span>
+                  <SettlementRowActions settlementId={s.id} />
                 </div>
               );
             })}
