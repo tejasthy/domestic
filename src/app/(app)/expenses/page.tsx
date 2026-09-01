@@ -36,10 +36,16 @@ export default async function ExpensesPage() {
             Manage recurring →
           </Link>
         </div>
-        <LinkButton href="/expenses/new" size="md">
-          <Icon.Plus size={18} />
-          Add
-        </LinkButton>
+        <div className="flex items-center gap-2 shrink-0">
+          <LinkButton href="/expenses/pay" size="md" tone="secondary">
+            <Icon.Swap size={18} />
+            Record payment
+          </LinkButton>
+          <LinkButton href="/expenses/new" size="md">
+            <Icon.Plus size={18} />
+            Add
+          </LinkButton>
+        </div>
       </header>
 
       {/* Balance board */}
@@ -240,13 +246,18 @@ export default async function ExpensesPage() {
               const to = byId.get(s.to_profile);
               return (
                 <div key={s.id} className="flex items-center gap-3 px-4 py-2.5">
-                  <span className="t-body-md text-ink flex-1">
-                    {from?.full_name.split(' ')[0]} → {to?.full_name.split(' ')[0]}
-                  </span>
-                  <span className="t-body-md text-ink font-semibold tabular-nums">
+                  <div className="min-w-0 flex-1">
+                    <p className="t-body-md text-ink truncate">
+                      {from?.full_name.split(' ')[0]} → {to?.full_name.split(' ')[0]}
+                    </p>
+                    {s.note && (
+                      <p className="t-body-sm text-ink-muted truncate">{s.note}</p>
+                    )}
+                  </div>
+                  <span className="t-body-md text-ink font-semibold tabular-nums shrink-0">
                     {formatCents(s.amount_cents)}
                   </span>
-                  <span className="t-body-sm text-ink-muted w-14 text-right">
+                  <span className="t-body-sm text-ink-muted w-14 text-right shrink-0">
                     {formatCalendarDate(s.settled_on, { month: 'short', day: 'numeric' })}
                   </span>
                 </div>

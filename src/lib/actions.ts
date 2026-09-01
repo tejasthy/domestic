@@ -625,41 +625,66 @@ export async function deleteExpense(expenseId: string): Promise<ActionResult> {
   return { ok: true };
 }
 
-export async function recordSettlement(
-  fromProfile: string,
-  toProfile: string,
-  amountDollars: string,
-  method = 'venmo',
-): Promise<ActionResult> {
-  const cents = parseDollars(amountDollars);
+const PaymentInput = z.object({
+  from_profile: z.string().uuid(),
+  to_profile: z.string().uuid(),
+  amount: z.string(),
+  paid_on: z.string(),
+  method: z.string().min(1).max(40).default('venmo'),
+  note: z.string().max(500).optional(),
+});
+
+export type PaymentInputType = z.input<typeof PaymentInput>;
+
+/** Records a payment that already happened (Venmo, cash, etc.) — it does not
+ * move any money. `created_by` may differ from both parties: anyone in the
+ * household can log a payment on someone else's behalf. */
+export async function recordPayment(input: PaymentInputType): Promise<ActionResult> {
+  const parsed = PaymentInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid input.' };
+  const { from_profile, to_profile, amount, paid_on, method, note } = parsed.data;
+
+  if (from_profile === to_profile) return { ok: false, error: 'Pick two different people.' };
+  const cents = parseDollars(amount);
   if (!cents || cents <= 0) return { ok: false, error: 'Enter an amount.' };
-  if (fromProfile === toProfile) return { ok: false, error: 'Pick two different people.' };
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: 'Not signed in.' };
 
   const { data: me } = await supabase
-    .from('profiles').select('household_id').eq('id', user.id)
-    .single<{ household_id: string }>();
+    .from('profiles').select('household_id, full_name').eq('id', user.id)
+    .single<{ household_id: string; full_name: string }>();
   if (!me?.household_id) return { ok: false, error: 'No household.' };
 
   const { error } = await supabase.from('settlements').insert({
     household_id: me.household_id,
-    from_profile: fromProfile,
-    to_profile: toProfile,
+    from_profile,
+    to_profile,
     amount_cents: cents,
+    settled_on: paid_on,
     method,
+    note: note ?? null,
     created_by: user.id,
   });
   if (error) return { ok: false, error: error.message };
 
-  await notifyProfiles([toProfile], {
-    title: 'You got paid',
-    body: `$${(cents / 100).toFixed(2)} settled up.`,
-    url: '/expenses',
-    tag: 'settlement',
-  });
+  if (to_profile !== user.id) {
+    await notifyProfiles([to_profile], {
+      title: 'You got paid',
+      body: `$${(cents / 100).toFixed(2)} settled up.`,
+      url: '/expenses',
+      tag: 'settlement',
+    });
+  }
+  if (from_profile !== user.id) {
+    await notifyProfiles([from_profile], {
+      title: 'A payment was logged for you',
+      body: `${me.full_name} recorded that you paid $${(cents / 100).toFixed(2)}.`,
+      url: '/expenses',
+      tag: 'settlement',
+    });
+  }
 
   revalidatePath('/', 'layout');
   return { ok: true };
