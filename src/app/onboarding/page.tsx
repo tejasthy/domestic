@@ -11,11 +11,12 @@ export default async function OnboardingPage({
 }: {
   searchParams: Promise<{ code?: string }>;
 }) {
-  const session = await getSession();
-  if (!session?.me) redirect('/login');
-  if (session.household) redirect('/');
-
   const { code } = await searchParams;
+  const session = await getSession();
+  // proxy.ts already sends an unauthenticated visitor to /login with this
+  // exact URL (query string included) as `next`; this is just the fallback.
+  if (!session?.me) redirect('/login');
+  if (session.household) redirect('/home');
 
   return (
     <main className="min-h-dvh bg-page px-6 py-10">
