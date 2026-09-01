@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Oswald, IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
 import { cookies } from 'next/headers';
 import { THEME_COOKIE, parseThemeCookie } from '@/lib/theme';
+import { Analytics } from '@/components/analytics';
 import './globals.css';
 
 const oswald = Oswald({
@@ -24,7 +25,7 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: 'Domestic',
-  description: 'Chores and money for 526 Detroit St.',
+  description: 'Chores and shared costs for your house, sorted.',
   manifest: '/manifest.webmanifest',
   icons: { apple: '/icons/apple-touch-icon.png' },
   appleWebApp: {
@@ -72,7 +73,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       className={`${oswald.variable} ${plexSans.variable} ${plexMono.variable}`}
       data-theme={theme === 'system' ? undefined : theme}
     >
-      <body>{children}</body>
+      <body>
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }

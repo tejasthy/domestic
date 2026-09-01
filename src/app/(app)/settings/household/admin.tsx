@@ -676,6 +676,37 @@ export function AiConfig({
         </Select>
       </Field>
 
+      <p className="t-body-sm text-ink-muted -mt-1">
+        {provider === 'gemini' ? (
+          <>
+            Get a free key at{' '}
+            <a
+              href="https://aistudio.google.com/apikey"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent font-medium underline underline-offset-2"
+            >
+              aistudio.google.com/apikey
+            </a>
+            . Sign in with any Google account — Gemini&rsquo;s free tier is
+            enough for a household&rsquo;s receipts.
+          </>
+        ) : (
+          <>
+            Get a key at{' '}
+            <a
+              href="https://console.anthropic.com/settings/keys"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent font-medium underline underline-offset-2"
+            >
+              console.anthropic.com
+            </a>
+            . Anthropic requires adding billing before it issues a key.
+          </>
+        )}
+      </p>
+
       <Field label="API key" hint="Encrypted at rest. Once saved, it can never be shown again.">
         <Input
           type="password"

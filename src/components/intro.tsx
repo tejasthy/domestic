@@ -32,22 +32,54 @@ function slidesFor(modules: string[], householdName: string): Slide[] {
         title: 'Two kinds of chores',
         body: 'Some are scheduled (floors on Sundays). Others happen whenever — tap "dishwasher is full" and whoever is up gets a nudge.',
       },
+      {
+        emoji: '🔁',
+        title: 'Can’t make it? Swap or skip',
+        body: 'Ask someone to trade turns, hand yours off, or mark it skipped if you’re out of town — the order stays exactly as predictable either way.',
+      },
+      {
+        emoji: '🧳',
+        title: 'Going away for a while?',
+        body: 'Mark yourself away in Settings and you’re pulled out of every rotation until you’re back — nobody has to cover for you by hand.',
+      },
     );
   }
 
   if (modules.includes('expenses')) {
+    slides.push(
+      {
+        emoji: '🧾',
+        title: 'Split costs without the spreadsheet',
+        body: 'Snap a receipt and the amount fills itself in, itemized down to tax and tip. Split it evenly, by exact amount, or by share.',
+      },
+      {
+        emoji: '🤝',
+        title: 'Settle up in the fewest payments',
+        body: 'Everyone sees what they owe. When it’s time to pay up, Domestic works out the smallest number of transfers that clears the whole house.',
+      },
+    );
+  }
+
+  if (modules.includes('kiosk')) {
     slides.push({
-      emoji: '🧾',
-      title: 'Split costs without the spreadsheet',
-      body: 'Snap a receipt and the amount fills itself in. Everyone sees what they owe, and settle-up works out the fewest payments that clear the house.',
+      emoji: '📺',
+      title: 'A board for the kitchen wall',
+      body: 'Pair a spare tablet from Settings → Household and it becomes an always-on display — today’s chores, who’s up, and any note the house leaves for each other. No login on the tablet itself.',
     });
   }
 
-  slides.push({
-    emoji: '🔔',
-    title: 'Turn on notifications',
-    body: 'You will be told when the rotation lands on you, and nothing else. Quiet hours are on by default overnight.',
-  });
+  slides.push(
+    {
+      emoji: '✉️',
+      title: 'Bring the rest of the house in',
+      body: 'Settings → Household → Invite someone makes a code and a ready-to-share link. Whoever uses it lands right in this house, no roster to set up by hand.',
+    },
+    {
+      emoji: '🔔',
+      title: 'Turn on notifications',
+      body: 'You will be told when the rotation lands on you, and nothing else. Quiet hours are on by default overnight — adjust them any time in Settings.',
+    },
+  );
 
   return slides;
 }

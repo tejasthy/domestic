@@ -13,7 +13,7 @@ export function AddressField({
   value,
   onChange,
   label = 'Address',
-  placeholder = '123 Main St., Ann Arbor, MI',
+  placeholder = '123 Main St., Springfield',
 }: {
   value: string;
   onChange: (value: string) => void;
