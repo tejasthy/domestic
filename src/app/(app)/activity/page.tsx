@@ -42,7 +42,7 @@ function groupByDay(entries: ActivityEntry[], timeZone: string) {
 
 export default async function ActivityPage() {
   const session = await getSession();
-  if (!session?.me || !session.household) redirect('/');
+  if (!session?.me || !session.household) redirect('/login');
   const { household, members } = session;
 
   const activity = await getActivity(80);

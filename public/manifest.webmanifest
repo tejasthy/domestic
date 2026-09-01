@@ -1,8 +1,8 @@
 {
   "name": "Domestic",
   "short_name": "Domestic",
-  "description": "Chores and money for 526 Detroit St.",
-  "start_url": "/",
+  "description": "Chores and shared costs, split fairly.",
+  "start_url": "/home",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

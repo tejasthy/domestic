@@ -27,7 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="md:flex md:gap-8 md:max-w-5xl md:mx-auto md:px-6">
         {/* Desktop rail */}
         <aside className="hidden md:flex md:flex-col md:w-52 md:shrink-0 md:py-6 md:sticky md:top-0 md:h-dvh">
-          <Link href="/" className="flex items-center gap-2.5 px-3 mb-7">
+          <Link href="/home" className="flex items-center gap-2.5 px-3 mb-7">
             <Logo size={30} />
             <span className="t-title-md font-display uppercase tracking-[0.14em] text-ink">
               Domestic
@@ -43,7 +43,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {/* Phone header */}
           <header className="md:hidden sticky top-0 z-30 bg-page/95 backdrop-blur border-b border-subtle pt-safe">
             <div className="flex items-center justify-between px-4 h-12">
-              <Link href="/" className="flex items-center gap-2">
+              <Link href="/home" className="flex items-center gap-2">
                 <Logo size={22} />
                 <span className="t-title-md font-display uppercase tracking-[0.14em] text-ink">
                   Domestic

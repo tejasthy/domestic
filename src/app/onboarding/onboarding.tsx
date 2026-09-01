@@ -54,9 +54,9 @@ export function Onboarding({
       </div>
 
       {tab === 'create' ? (
-        <CreateForm suggestedName={suggestedName} modules={modules} onDone={() => router.push('/')} />
+        <CreateForm suggestedName={suggestedName} modules={modules} onDone={() => router.push('/home')} />
       ) : (
-        <JoinForm initialCode={initialCode} onDone={() => router.push('/')} />
+        <JoinForm initialCode={initialCode} onDone={() => router.push('/home')} />
       )}
     </div>
   );
@@ -118,7 +118,7 @@ function CreateForm({
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="526 Detroit St."
+            placeholder="The Maple House"
             required
             autoFocus
           />

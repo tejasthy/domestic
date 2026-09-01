@@ -294,7 +294,7 @@ export async function getKioskDevices() {
  */
 export async function requireModule(key: ModuleKey) {
   const session = await getSession();
-  if (!session?.me || !session.household) redirect('/');
+  if (!session?.me || !session.household) redirect('/login');
   if (!session.modules.includes(key)) notFound();
   // The guard above already guarantees this at runtime; redirect()'s `never`
   // return type doesn't propagate narrowing through getSession's wider union.

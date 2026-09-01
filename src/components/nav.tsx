@@ -20,7 +20,7 @@ type Tab = { href: string; label: string; icon: React.ComponentType<{ size?: num
  * isn't owned by either module the way the kiosk's "Lately" feed is. */
 function tabsFor(modules: string[]): Tab[] {
   return [
-    { href: '/', label: 'Today', icon: Icon.Home },
+    { href: '/home', label: 'Today', icon: Icon.Home },
     ...navFor(modules).map((n) => ({ href: n.href, label: n.label, icon: ICONS[n.icon] })),
     { href: '/activity', label: 'Activity', icon: Icon.Clock },
     { href: '/settings', label: 'You', icon: Icon.Settings },
@@ -28,7 +28,7 @@ function tabsFor(modules: string[]): Tab[] {
 }
 
 function isActive(pathname: string, href: string) {
-  return href === '/' ? pathname === '/' : pathname.startsWith(href);
+  return href === '/home' ? pathname === '/home' : pathname.startsWith(href);
 }
 
 /** Phone-first: a thumb-reachable tab bar pinned to the bottom. */
