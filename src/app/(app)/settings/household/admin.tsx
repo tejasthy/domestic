@@ -476,7 +476,7 @@ export function CrossCompleteToggle({ enabled }: { enabled: boolean }) {
 
 /* -------------------------------------------------------------------- kiosk */
 
-export function LocationSetting({ label }: { label: string | null }) {
+export function LocationSetting({ label, address }: { label: string | null; address: string | null }) {
   const [pending, start] = useTransition();
   const [query, setQuery] = useState('');
   const [current, setCurrent] = useState(label);
@@ -484,8 +484,19 @@ export function LocationSetting({ label }: { label: string | null }) {
 
   return (
     <Card className="p-4 space-y-3">
-      {current && <p className="t-body-md text-ink">{current}</p>}
-      <Field label={current ? 'Change it' : 'City'} hint="Used for the kiosk weather widget.">
+      {current ? (
+        <p className="t-body-md text-ink">{current}</p>
+      ) : address ? (
+        <p className="t-body-md text-ink-muted">Defaulting to the house address: {address}</p>
+      ) : null}
+      <Field
+        label={current ? 'Change it' : address ? 'Override' : 'City'}
+        hint={
+          address
+            ? 'Only needed if the kiosk should show weather for somewhere other than the house.'
+            : 'Used for the kiosk weather widget.'
+        }
+      >
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}

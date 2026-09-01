@@ -34,8 +34,7 @@ const WEATHER_CODES: Record<number, { emoji: string; label: string }> = {
 
 export type GeocodeResult = { label: string; lat: number; lon: number };
 
-/** Free, keyless — resolves a place name to coordinates plus a display label. */
-export async function geocodeLocation(query: string): Promise<GeocodeResult | null> {
+async function geocodeQuery(query: string, revalidateSeconds: number): Promise<GeocodeResult | null> {
   const trimmed = query.trim();
   if (!trimmed) return null;
 
@@ -43,7 +42,7 @@ export async function geocodeLocation(query: string): Promise<GeocodeResult | nu
   url.searchParams.set('name', trimmed);
   url.searchParams.set('count', '1');
 
-  const res = await fetch(url, { next: { revalidate: 0 } });
+  const res = await fetch(url, { next: { revalidate: revalidateSeconds } });
   if (!res.ok) return null;
 
   const data = await res.json();
@@ -52,6 +51,23 @@ export async function geocodeLocation(query: string): Promise<GeocodeResult | nu
 
   const label = [hit.name, hit.admin1, hit.country_code].filter(Boolean).join(', ');
   return { label, lat: hit.latitude, lon: hit.longitude };
+}
+
+/** Free, keyless — resolves a place name to coordinates plus a display label.
+ * Never cached: an admin searching for a place expects exactly what they
+ * typed back, not a stale answer from someone else's earlier attempt. */
+export async function geocodeLocation(query: string): Promise<GeocodeResult | null> {
+  return geocodeQuery(query, 0);
+}
+
+/** Geocodes the house's own street address as the kiosk weather widget's
+ * default location, so an admin only has to set one under Settings → Household
+ * → Wall display if they want weather for somewhere other than the house
+ * itself. A physical address doesn't move, so this is cached for a day rather
+ * than the 10 minutes getWeather() itself uses — the kiosk polls every 5
+ * seconds and would otherwise hammer the geocoder for no reason. */
+export async function geocodeHouseAddress(address: string): Promise<GeocodeResult | null> {
+  return geocodeQuery(address, 86400);
 }
 
 export type HourlyForecast = { hourLabel: string; tempF: number; emoji: string; precipChance: number };

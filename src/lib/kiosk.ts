@@ -62,6 +62,7 @@ export type KioskData = {
     id: string;
     name: string;
     timezone: string;
+    address: string | null;
     latitude: number | null;
     longitude: number | null;
   };
@@ -93,9 +94,12 @@ export async function loadKiosk(householdId: string): Promise<KioskData | null> 
 
   const { data: household } = await admin
     .from('households')
-    .select('id, name, timezone, latitude, longitude')
+    .select('id, name, timezone, address, latitude, longitude')
     .eq('id', householdId)
-    .single<{ id: string; name: string; timezone: string; latitude: number | null; longitude: number | null }>();
+    .single<{
+      id: string; name: string; timezone: string;
+      address: string | null; latitude: number | null; longitude: number | null;
+    }>();
 
   if (!household) return null;
 
