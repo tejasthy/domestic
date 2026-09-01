@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
     await notifyProfiles([next.assignee_id], {
       title: `${chore.emoji} ${chore.name} — you're up`,
       body: 'Flagged from Home Assistant.',
-      url: '/',
+      url: '/home',
       tag: `chore-${chore.id}`,
     });
   }

@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function HouseholdSettingsPage() {
   const session = await getSession();
-  if (!session?.me || !session.household) redirect('/');
+  if (!session?.me || !session.household) redirect('/login');
   const { me, household, members, modules } = session;
 
   if (!me.is_admin) {

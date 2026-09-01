@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
     const result = await notifyProfiles([profileId], {
       title: turns.length === 1 ? "You're up" : `${turns.length} chores on you`,
       body: names,
-      url: '/',
+      url: '/home',
       tag: 'daily-digest',
     });
     report.notified += result.sent;

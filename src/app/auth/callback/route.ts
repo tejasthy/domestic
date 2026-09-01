@@ -10,7 +10,7 @@ import { createClient } from '@/lib/supabase/server';
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
-  const next = searchParams.get('next') ?? '/';
+  const next = searchParams.get('next') ?? '/home';
 
   const fail = (reason: string, detail?: string | null) => {
     const url = new URL('/login', origin);
