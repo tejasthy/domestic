@@ -34,3 +34,38 @@ for (const { file, size, svg } of targets) {
   await writeFile(new URL(`../public/icons/${file}`, import.meta.url), png);
   console.log(`public/icons/${file}  ${size}×${size}`);
 }
+
+/** PNG-in-ICO container (valid since Vista) — no ico-encoder dependency needed. */
+async function buildFavicon(sizes) {
+  const pngs = await Promise.all(
+    sizes.map((size) => sharp(Buffer.from(mark(BLUE, MAIZE))).resize(size, size).png().toBuffer()),
+  );
+
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(0, 0); // reserved
+  header.writeUInt16LE(1, 2); // type: icon
+  header.writeUInt16LE(pngs.length, 4);
+
+  let offset = 6 + 16 * pngs.length;
+  const dir = Buffer.concat(
+    pngs.map((png, i) => {
+      const entry = Buffer.alloc(16);
+      entry.writeUInt8(sizes[i] >= 256 ? 0 : sizes[i], 0); // width (0 = 256)
+      entry.writeUInt8(sizes[i] >= 256 ? 0 : sizes[i], 1); // height
+      entry.writeUInt8(0, 2); // color count
+      entry.writeUInt8(0, 3); // reserved
+      entry.writeUInt16LE(1, 4); // color planes
+      entry.writeUInt16LE(32, 6); // bits per pixel
+      entry.writeUInt32LE(png.length, 8);
+      entry.writeUInt32LE(offset, 12);
+      offset += png.length;
+      return entry;
+    }),
+  );
+
+  return Buffer.concat([header, dir, ...pngs]);
+}
+
+const favicon = await buildFavicon([16, 32, 48]);
+await writeFile(new URL('../src/app/favicon.ico', import.meta.url), favicon);
+console.log('src/app/favicon.ico  16/32/48');
