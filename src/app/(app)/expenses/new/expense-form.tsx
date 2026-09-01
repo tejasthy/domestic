@@ -403,7 +403,7 @@ export function ExpenseForm({ mode = 'create', me, members, expense }: Props) {
         />
       </Field>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Amount" hint={items ? 'Sum of the items below.' : undefined}>
           <Input
             value={items ? formatCents(itemsTotalCents) : amount}
@@ -420,6 +420,7 @@ export function ExpenseForm({ mode = 'create', me, members, expense }: Props) {
             value={spentOn}
             onChange={(e) => setSpentOn(e.target.value)}
             required
+            className="appearance-none"
           />
         </Field>
       </div>
