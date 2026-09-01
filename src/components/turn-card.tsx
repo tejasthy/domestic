@@ -334,38 +334,44 @@ export function ActivityRow({
   );
 }
 
-/** "Dishwasher's full" — puts an on-demand chore on someone's plate now. */
+/**
+ * "Dishwasher's full" — puts an on-demand chore on someone's plate now.
+ * `flagged` comes from the server (is there already a pending, due'd turn for
+ * this chore?), same as the kiosk's KioskFlagButton — so it stays greyed out
+ * for everyone until that turn is completed, rather than just for whoever
+ * tapped it in this browser tab.
+ */
 export function FlagButton({
   choreId,
   emoji,
   label,
+  flagged,
 }: {
   choreId: string;
   emoji: string;
   label: string;
+  flagged: boolean;
 }) {
   const [pending, start] = useTransition();
-  const [flagged, setFlagged] = useState(false);
 
   return (
     <button
+      type="button"
       onClick={() => {
-        setFlagged(true);
         start(async () => {
-          const res = await flagChore(choreId);
-          if (!res.ok) setFlagged(false);
+          await flagChore(choreId);
         });
       }}
       disabled={pending || flagged}
       className={cx(
         'flex flex-col items-center justify-center gap-1.5 p-4 rounded-lg',
         'border border-line bg-card transition-colors duration-[120ms]',
-        'hover:bg-hover active:bg-sunken disabled:opacity-60',
+        'hover:bg-hover active:bg-sunken disabled:opacity-50',
       )}
     >
       <span className="text-2xl" aria-hidden>{emoji}</span>
       <span className="t-body-sm font-medium text-ink text-center leading-tight">
-        {flagged ? 'Flagged' : label}
+        {pending ? 'Flagging…' : flagged ? 'Flagged' : label}
       </span>
     </button>
   );
