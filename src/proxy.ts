@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 
 const PUBLIC_PATHS = [
   '/login', '/auth', '/kiosk', '/api/ha', '/api/cron',
+  '/privacy', '/terms',
   '/manifest.webmanifest', '/kiosk-manifest.webmanifest', '/sw.js',
 ];
 

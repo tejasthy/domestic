@@ -196,6 +196,10 @@
   .pb-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
   .pt-safe { padding-top: max(0.75rem, env(safe-area-inset-top)); }
 
+  /* Scoped to the marketing page, never set on html outright: a global
+     smooth scroll also animates App Router route changes, which should cut. */
+  :root:has([data-smooth-scroll]) { scroll-behavior: smooth; }
+
   ::selection { background: var(--color-maize); color: var(--color-blue); }
 
   :focus-visible {
@@ -231,6 +235,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  :root:has([data-smooth-scroll]) { scroll-behavior: auto; }
+
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;

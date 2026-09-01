@@ -1,10 +1,9 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/data';
-import { Logo, Wordmark } from '@/components/brand';
 import { Card, Initials, Pill, LinkButton } from '@/components/ui';
-import { ParallaxLayer } from '@/components/parallax';
+import { SiteNav, SiteFooter } from '@/components/site-chrome';
+import { ParallaxLayer, Reveal } from '@/components/parallax';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +27,7 @@ export default async function MarketingPage() {
   if (session?.me) redirect('/onboarding');
 
   return (
-    <main className="bg-page overflow-x-clip">
+    <main data-smooth-scroll className="bg-page overflow-x-clip">
       <SiteNav />
       <Hero />
       <Story />
@@ -42,42 +41,6 @@ export default async function MarketingPage() {
   );
 }
 
-/* ------------------------------------------------------------------- chrome */
-
-function SiteNav() {
-  return (
-    <header className="sticky top-0 z-30 bg-page/90 backdrop-blur border-b border-subtle">
-      <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5">
-          <Logo size={26} />
-          <Wordmark />
-        </Link>
-        <Link href="/login" className="t-body-sm font-semibold text-ink hover:text-accent transition-colors">
-          Sign in
-        </Link>
-      </div>
-    </header>
-  );
-}
-
-function SiteFooter() {
-  return (
-    <footer className="border-t border-subtle">
-      <div className="max-w-5xl mx-auto px-6 py-10 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-2.5">
-          <Logo size={22} />
-          <span className="t-body-sm text-ink-muted">
-            Domestic — the fridge chart, minus the guesswork.
-          </span>
-        </div>
-        <Link href="/login" className="t-body-sm font-semibold text-accent">
-          Sign in →
-        </Link>
-      </div>
-    </footer>
-  );
-}
-
 /* -------------------------------------------------------------------- hero */
 
 function Blob({ className }: { className: string }) {
@@ -87,8 +50,10 @@ function Blob({ className }: { className: string }) {
 function Hero() {
   return (
     <section className="relative overflow-hidden px-6 pt-16 pb-24 md:pt-24 md:pb-32">
-      <ParallaxLayer speed={0.15} className="absolute inset-0 pointer-events-none">
+      <ParallaxLayer decorative speed={0.15} className="absolute inset-0 pointer-events-none">
         <Blob className="w-[28rem] h-[28rem] bg-maize/25 -top-24 -right-24" />
+      </ParallaxLayer>
+      <ParallaxLayer decorative speed={0.28} className="absolute inset-0 pointer-events-none">
         <Blob className="w-72 h-72 bg-blue/10 dark:bg-maize/10 top-40 -left-16" />
       </ParallaxLayer>
 
@@ -112,13 +77,13 @@ function Hero() {
             href="#story"
             className="t-body-md font-semibold text-ink-2 hover:text-ink transition-colors px-2 py-3"
           >
-            Why I built this ↓
+            The story behind the app ↓
           </a>
         </div>
       </div>
 
       <div className="relative max-w-md mx-auto mt-16">
-        <ParallaxLayer speed={-0.06}>
+        <ParallaxLayer speed={-0.08}>
           <ChoresMockup />
         </ParallaxLayer>
       </div>
@@ -130,33 +95,44 @@ function Hero() {
 
 function Story() {
   return (
-    <section id="story" className="relative px-6 py-20 md:py-28 bg-sunken">
-      <ParallaxLayer speed={0.1} className="absolute inset-0 pointer-events-none overflow-hidden">
-        <Blob className="w-96 h-96 bg-blue/5 dark:bg-maize/5 top-0 left-1/2 -translate-x-1/2" />
+    <section
+      id="story"
+      // Clears the sticky nav (h-14) when the hero's anchor scrolls here.
+      className="relative scroll-mt-14 overflow-hidden px-6 py-24 md:py-32 bg-sunken"
+    >
+      <ParallaxLayer decorative speed={0.2} className="absolute inset-0 pointer-events-none">
+        <Blob className="w-[30rem] h-[30rem] bg-maize/20 -top-40 -left-32" />
+      </ParallaxLayer>
+      <ParallaxLayer decorative speed={-0.12} className="absolute inset-0 pointer-events-none">
+        <Blob className="w-80 h-80 bg-blue/5 dark:bg-maize/5 -bottom-24 -right-16" />
       </ParallaxLayer>
 
       <div className="relative max-w-2xl mx-auto">
-        <p className="t-label text-accent mb-4">Why I built this</p>
-        <div className="border-l-4 border-maize pl-6 space-y-5">
-          <p className="t-title-lg text-ink">
-            I live with roommates. For years, the chore rotation was a paper
-            chart taped to the fridge, and the money was a group chat full of
-            &ldquo;I got groceries, you owe me $14&rdquo; that nobody ever
-            fully settled.
-          </p>
-          <p className="t-body-lg text-ink-2">
-            The chart worked right up until someone forgot whose turn it was,
-            the marker ran dry, or we moved and it didn&rsquo;t come with us.
-            So I built the digital version — a chore rotation that can never
-            be quietly reassigned, and a ledger that always adds up, down to
-            the cent.
-          </p>
-          <p className="t-body-lg text-ink-2">
-            I built it for my own house first. It&rsquo;s free, it runs on
-            infrastructure that&rsquo;s free at this scale, and it&rsquo;s now
-            open for yours.
-          </p>
-        </div>
+        <Reveal>
+          <h2 className="t-display-xl text-ink">Brandon was a bum.</h2>
+        </Reveal>
+
+        <Reveal delay={120} className="mt-8">
+          <div className="border-l-4 border-maize pl-6 space-y-5">
+            <p className="t-title-lg text-ink">
+              I live with 4 roommates. For years, the chore rotation was a
+              paper chart taped to the fridge, and the money was a Google
+              Sheet that required manual categorization and itemization of
+              receipts and expenses.
+            </p>
+            <p className="t-body-lg text-ink-2">
+              As we started senior year, the printer stopped working. Being
+              too lazy to buy printer ink, I built a digital version. A chore
+              rotation that allows easy tracking, and a ledger that always
+              adds up with AI-enabled receipt scanning.
+            </p>
+            <p className="t-body-lg text-ink-2">
+              I built it for my own house first. It&rsquo;s free and it&rsquo;s
+              now open for your household.
+            </p>
+            <p className="t-label text-ink-muted">— Tejas</p>
+          </div>
+        </Reveal>
       </div>
     </section>
   );
@@ -178,18 +154,28 @@ function FeatureSection({
   mockup: React.ReactNode;
 }) {
   return (
-    <section className="px-6 py-16 md:py-20">
+    <section className="relative overflow-hidden px-6 py-20 md:py-28">
+      <ParallaxLayer decorative speed={0.14} className="absolute inset-0 pointer-events-none">
+        <Blob
+          className={`w-80 h-80 bg-blue/5 dark:bg-maize/5 top-1/4 ${
+            reverse ? '-left-32' : '-right-32'
+          }`}
+        />
+      </ParallaxLayer>
+
       <div
-        className={`max-w-5xl mx-auto grid md:grid-cols-2 gap-10 md:gap-16 items-center ${
+        className={`relative max-w-5xl mx-auto grid md:grid-cols-2 gap-10 md:gap-16 items-center ${
           reverse ? 'md:[&>*:first-child]:order-2' : ''
         }`}
       >
-        <div>
+        <Reveal>
           <p className="t-label text-accent mb-3">{eyebrow}</p>
           <h2 className="t-display-lg text-ink">{title}</h2>
           <p className="t-body-lg text-ink-2 mt-4">{body}</p>
-        </div>
-        <div>{mockup}</div>
+        </Reveal>
+        {/* The card drifts against the page, so it slides past the copy
+            beside it instead of riding along with it. */}
+        <ParallaxLayer speed={-0.07}>{mockup}</ParallaxLayer>
       </div>
     </section>
   );
@@ -327,19 +313,25 @@ function HowItWorks() {
     },
   ];
   return (
-    <section className="px-6 py-16 md:py-20 bg-sunken">
-      <div className="max-w-5xl mx-auto">
-        <p className="t-label text-accent mb-3 text-center">How it works</p>
-        <h2 className="t-display-lg text-ink text-center mb-12">Up and running in a few minutes.</h2>
+    <section className="relative overflow-hidden px-6 py-16 md:py-20 bg-sunken">
+      <ParallaxLayer decorative speed={0.16} className="absolute inset-0 pointer-events-none">
+        <Blob className="w-96 h-96 bg-maize/15 top-0 left-1/2 -translate-x-1/2" />
+      </ParallaxLayer>
+
+      <div className="relative max-w-5xl mx-auto">
+        <Reveal>
+          <p className="t-label text-accent mb-3 text-center">How it works</p>
+          <h2 className="t-display-lg text-ink text-center mb-12">Up and running in a few minutes.</h2>
+        </Reveal>
         <div className="grid sm:grid-cols-3 gap-6">
-          {steps.map((s) => (
-            <div key={s.n}>
+          {steps.map((s, i) => (
+            <Reveal key={s.n} delay={i * 110}>
               <div className="w-10 h-10 rounded-pill bg-blue text-white dark:bg-maize dark:text-blue flex items-center justify-center t-title-md font-display mb-4">
                 {s.n}
               </div>
               <h3 className="t-title-lg text-ink">{s.title}</h3>
               <p className="t-body-md text-ink-2 mt-2">{s.body}</p>
-            </div>
+            </Reveal>
           ))}
         </div>
       </div>
@@ -352,10 +344,13 @@ function HowItWorks() {
 function FinalCta() {
   return (
     <section className="relative px-6 py-20 md:py-28 bg-blue overflow-hidden">
-      <ParallaxLayer speed={0.12} className="absolute inset-0 pointer-events-none">
+      <ParallaxLayer decorative speed={0.12} className="absolute inset-0 pointer-events-none">
         <Blob className="w-96 h-96 bg-maize/20 -bottom-32 -left-20" />
       </ParallaxLayer>
-      <div className="relative max-w-2xl mx-auto text-center">
+      <ParallaxLayer decorative speed={-0.18} className="absolute inset-0 pointer-events-none">
+        <Blob className="w-72 h-72 bg-white/10 -top-24 -right-16" />
+      </ParallaxLayer>
+      <Reveal className="relative max-w-2xl mx-auto text-center">
         <h2 className="t-display-lg text-white">Ready to ditch the spreadsheet?</h2>
         <p className="t-body-lg text-white/80 mt-4">
           Free to run, remainder-safe by design, and it fits your house — not just mine.
@@ -372,7 +367,7 @@ function FinalCta() {
             Start your house
           </LinkButton>
         </div>
-      </div>
+      </Reveal>
     </section>
   );
 }
