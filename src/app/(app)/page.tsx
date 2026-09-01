@@ -57,7 +57,7 @@ export default async function TodayPage() {
   const myBalance = balances[me.id] ?? 0;
 
   return (
-    <div className="space-y-7 max-w-2xl">
+    <div className="space-y-8 max-w-2xl">
       <header>
         <h1 className="t-display-lg text-ink">
           {greeting(me.full_name.split(' ')[0], household.timezone)}
@@ -74,7 +74,7 @@ export default async function TodayPage() {
       {(swaps ?? []).length > 0 && (
         <section>
           <SectionHeader title="Needs an answer" />
-          <div className="space-y-2">
+          <div className="space-y-3">
             {(swaps ?? []).map((s) => (
               <SwapRequestRow
                 key={s.id}
@@ -100,7 +100,7 @@ export default async function TodayPage() {
             />
           </Card>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {mineNow.map((t) => (
               <TurnRow key={t.id} turn={t} mine crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} />
             ))}
@@ -135,7 +135,7 @@ export default async function TodayPage() {
               </Link>
             }
           />
-          <div className="space-y-2">
+          <div className="space-y-3">
             {theirs.slice(0, 6).map((t) => (
               <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} />
             ))}
@@ -146,7 +146,7 @@ export default async function TodayPage() {
       {mineLater.length > 0 && (
         <section>
           <SectionHeader title="Coming up for you" />
-          <div className="space-y-2">
+          <div className="space-y-3">
             {mineLater.map((t) => (
               <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} />
             ))}

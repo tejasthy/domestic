@@ -49,7 +49,7 @@ export function SectionHeader({
   className?: string;
 }) {
   return (
-    <div className={cx('flex items-baseline justify-between gap-3 mb-3', className)}>
+    <div className={cx('flex items-baseline justify-between gap-3 mb-3.5', className)}>
       <h2 className="t-label text-ink-muted">{title}</h2>
       {action}
     </div>
