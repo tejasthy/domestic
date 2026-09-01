@@ -96,7 +96,7 @@ export function TurnRow({
 
   if (undone) {
     return (
-      <Card className={cx('flex items-center gap-3 p-3.5', className)}>
+      <Card className={cx('flex items-center gap-3 p-4', className)}>
         <span className="w-9 h-9 grid place-items-center rounded-pill bg-info/15 text-info shrink-0">
           <Icon.Undo size={18} />
         </span>
@@ -107,7 +107,7 @@ export function TurnRow({
 
   if (settled) {
     return (
-      <Card className={cx('flex items-center gap-3 p-3.5 opacity-60', className)}>
+      <Card className={cx('flex items-center gap-3 p-4 opacity-60', className)}>
         <span
           className={cx(
             'w-9 h-9 grid place-items-center rounded-pill shrink-0',
@@ -141,15 +141,15 @@ export function TurnRow({
   }
 
   return (
-    <Card className={cx('p-3.5', className)}>
-      <div className="flex items-center gap-3">
+    <Card className={cx('p-4', className)}>
+      <div className="flex items-start gap-3">
         <span className="text-2xl w-9 text-center shrink-0" aria-hidden>
           {turn.chore.emoji}
         </span>
 
         <div className="min-w-0 flex-1">
-          <p className="t-title-md text-ink truncate">{turn.chore.name}</p>
-          <div className="flex items-center gap-2 mt-1">
+          <p className="t-title-md text-ink">{turn.chore.name}</p>
+          <div className="flex flex-wrap items-center gap-2 mt-1.5">
             <Pill tone={due.tone}>{due.text}</Pill>
             {!mine && (
               <span className="flex items-center gap-1.5 t-body-sm text-ink-muted">
@@ -163,53 +163,53 @@ export function TurnRow({
             )}
           </div>
         </div>
-
-        {canComplete && (
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={onPass}
-              disabled={pending}
-              aria-label={
-                mine
-                  ? `Pass my turn for ${turn.chore.name} to the next person`
-                  : `Pass ${turn.assignee.full_name.split(' ')[0]}'s turn for ${turn.chore.name} to the next person`
-              }
-              title="Pass — give this to the next person, same day"
-              className="w-10 h-10 grid place-items-center rounded-md text-ink-muted hover:bg-hover active:bg-sunken disabled:opacity-50"
-            >
-              <Icon.Swap size={18} />
-            </button>
-            <button
-              type="button"
-              onClick={onSkip}
-              disabled={pending}
-              aria-label={
-                mine
-                  ? `Skip my turn for ${turn.chore.name}`
-                  : `Skip ${turn.assignee.full_name.split(' ')[0]}'s turn for ${turn.chore.name}`
-              }
-              title="Skip — no one does this one"
-              className="w-10 h-10 grid place-items-center rounded-md text-ink-muted hover:bg-hover active:bg-sunken disabled:opacity-50"
-            >
-              <Icon.SkipForward size={18} />
-            </button>
-            <Button
-              size="md"
-              onClick={onComplete}
-              disabled={pending}
-              aria-label={
-                mine
-                  ? `Mark ${turn.chore.name} done`
-                  : `Mark ${turn.chore.name} done for ${turn.assignee.full_name.split(' ')[0]}`
-              }
-            >
-              <Icon.Check size={18} />
-              {mine ? 'Done' : `For ${turn.assignee.full_name.split(' ')[0]}`}
-            </Button>
-          </div>
-        )}
       </div>
+
+      {canComplete && (
+        <div className="flex items-center justify-end gap-2 mt-3.5 pt-3.5 border-t border-subtle">
+          <button
+            type="button"
+            onClick={onPass}
+            disabled={pending}
+            aria-label={
+              mine
+                ? `Pass my turn for ${turn.chore.name} to the next person`
+                : `Pass ${turn.assignee.full_name.split(' ')[0]}'s turn for ${turn.chore.name} to the next person`
+            }
+            title="Pass — give this to the next person, same day"
+            className="w-11 h-11 grid place-items-center rounded-md text-ink-muted hover:bg-hover active:bg-sunken disabled:opacity-50"
+          >
+            <Icon.Swap size={18} />
+          </button>
+          <button
+            type="button"
+            onClick={onSkip}
+            disabled={pending}
+            aria-label={
+              mine
+                ? `Skip my turn for ${turn.chore.name}`
+                : `Skip ${turn.assignee.full_name.split(' ')[0]}'s turn for ${turn.chore.name}`
+            }
+            title="Skip — no one does this one"
+            className="w-11 h-11 grid place-items-center rounded-md text-ink-muted hover:bg-hover active:bg-sunken disabled:opacity-50"
+          >
+            <Icon.SkipForward size={18} />
+          </button>
+          <Button
+            size="lg"
+            onClick={onComplete}
+            disabled={pending}
+            aria-label={
+              mine
+                ? `Mark ${turn.chore.name} done`
+                : `Mark ${turn.chore.name} done for ${turn.assignee.full_name.split(' ')[0]}`
+            }
+          >
+            <Icon.Check size={18} />
+            {mine ? 'Done' : `For ${turn.assignee.full_name.split(' ')[0]}`}
+          </Button>
+        </div>
+      )}
 
       {error && <p className="t-body-sm text-danger mt-2">{error}</p>}
     </Card>
@@ -387,7 +387,7 @@ export function SwapRequestRow({
 
   if (resolved !== null) {
     return (
-      <Card className="p-3.5">
+      <Card className="p-4">
         <p className="t-body-md text-ink-2">
           {resolved ? `You took ${choreName}.` : 'Declined.'}
         </p>
@@ -396,7 +396,7 @@ export function SwapRequestRow({
   }
 
   return (
-    <Card className="p-3.5">
+    <Card className="p-4">
       <div className="flex items-start gap-3">
         <span className="w-9 h-9 grid place-items-center rounded-pill bg-info/15 text-info shrink-0">
           <Icon.Swap size={20} />
