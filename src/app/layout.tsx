@@ -30,21 +30,38 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: 'Domestic',
-    statusBarStyle: 'default',
+    // 'default' paints the iOS status bar white regardless of app theme;
+    // 'black-translucent' lets the page's own background show through.
+    statusBarStyle: 'black-translucent',
   },
 };
 
-export const viewport: Viewport = {
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f7f8f9' },
-    { media: '(prefers-color-scheme: dark)', color: '#0e1116' },
-  ],
-  width: 'device-width',
-  initialScale: 1,
-  viewportFit: 'cover',
-  // The kiosk and phone are both fixed-layout; pinch-zoom only causes misfires.
-  maximumScale: 1,
-};
+const SURFACE_LIGHT = '#f7f8f9';
+const SURFACE_DARK = '#0e1116';
+
+export async function generateViewport(): Promise<Viewport> {
+  const theme = parseThemeCookie((await cookies()).get(THEME_COOKIE)?.value);
+
+  return {
+    // The in-app theme toggle can disagree with the OS scheme, so a
+    // resolved light/dark cookie pins theme-color to match instead of
+    // leaving it keyed to prefers-color-scheme alone.
+    themeColor:
+      theme === 'system'
+        ? [
+            { media: '(prefers-color-scheme: light)', color: SURFACE_LIGHT },
+            { media: '(prefers-color-scheme: dark)', color: SURFACE_DARK },
+          ]
+        : theme === 'dark'
+          ? SURFACE_DARK
+          : SURFACE_LIGHT,
+    width: 'device-width',
+    initialScale: 1,
+    viewportFit: 'cover',
+    // The kiosk and phone are both fixed-layout; pinch-zoom only causes misfires.
+    maximumScale: 1,
+  };
+}
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const theme = parseThemeCookie((await cookies()).get(THEME_COOKIE)?.value);
