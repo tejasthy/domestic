@@ -1,6 +1,6 @@
 # Domestic
 
-Chores and shared costs for 526 Detroit St.
+Chores and shared costs, split fairly — for any house that runs it.
 
 It is the paper chart on the fridge, with the counting done for you. The model
 is deliberately the same: every chore owns a fixed rotation of roommates and a
@@ -44,21 +44,23 @@ Under **Authentication → URL Configuration**, add both
 `https://<your-app>.vercel.app/auth/callback` as redirect URLs.
 
 Under **Authentication → Sign In / Providers → Email**, turn *Allow new users to
-sign up* **off** — nobody self-registers; the seed script invites the four of
-you by email into `household_invites`.
+sign up* **on** — Domestic is meant for anyone to run their own house on, not
+just one invited roster. Membership into a *specific* household is still gated
+separately: by an invite code, or by being the one who starts it (see
+[Households, invites, and modules](#households-invites-and-modules) below).
+Signing up for an account and joining a house are two different steps.
 
 ### Sign-in providers
 
-Membership is decided by the **invite roster**, not by how you sign in. Any
-provider works; whoever first authenticates with an invited address gets that
-identity (name, initials, color, household). An uninvited address gets a profile
-with no household and sees a "you're not in this house" screen.
+Any provider works; the first person to authenticate with a given address gets
+a fresh profile with no household, and lands in onboarding to start one or
+redeem an invite code.
 
-**Google** (recommended — free, and it sidesteps email delivery entirely):
+**Google:**
 
 1. [Google Cloud Console](https://console.cloud.google.com) → new project →
-   **APIs & Services → OAuth consent screen**. External, add yourself as a test
-   user, or publish it — four people either way.
+   **APIs & Services → OAuth consent screen**. External; publish it once you're
+   ready for the public (not just test users).
 2. **Credentials → Create credentials → OAuth client ID → Web application**.
    Authorized redirect URI:
    `https://<project-ref>.supabase.co/auth/v1/callback`
@@ -68,14 +70,46 @@ with no household and sees a "you're not in this house" screen.
    client ID and secret, enable.
 
 **Apple** needs a paid Apple Developer account ($99/yr) to issue the Services ID
-and signing key. Skip it unless you already have one; Google covers iPhones fine.
+and signing key. Skip it; Google + email/password covers everyone else fine.
 
-**Magic links** still work as a fallback, but Supabase's built-in email sender is
-rate limited to roughly **2 messages per hour** — enough to look broken with four
-roommates. If you rely on them, set custom SMTP under **Project Settings →
-Authentication → SMTP Settings** ([Resend](https://resend.com) free tier, host
-`smtp.resend.com`, port `587`, user `resend`, password = your API key, sender
-`onboarding@resend.dev`) and raise **Rate Limits → Emails per hour**.
+**Email + password** is on by default — Supabase handles it, nothing to
+configure. It does need real SMTP, same as magic links below, because signup
+confirmation and password-reset both send an email.
+
+**Magic links** are opt-in (`NEXT_PUBLIC_ENABLE_MAGIC_LINK=true`) — an
+alternative to typing a password, not a replacement for it.
+
+**Both of the above need real SMTP.** Supabase's built-in sender is rate
+limited to roughly **2 messages per hour**, which looks broken rather than
+rate-limited the moment more than a couple of people try to sign up around the
+same time. Set custom SMTP under **Project Settings → Authentication → SMTP
+Settings** — [Resend](https://resend.com)'s free tier works well to start:
+host `smtp.resend.com`, port `587`, user `resend`, password = your Resend API
+key, sender an address on a domain you've verified with Resend (`onboarding@resend.dev`
+works unverified, but Gmail and others are more likely to spam-box it). Then
+raise **Authentication → Rate Limits → Emails per hour** to match. Resend's
+free tier is 3,000 emails/month; move to a paid plan or SES once you outgrow it.
+
+### CAPTCHA
+
+Once signups are open to the public, bot signups are a real risk. Under
+**Authentication → Attack Protection → Bot and Abuse Protection**, enable
+**Cloudflare Turnstile**:
+
+1. [Cloudflare dashboard](https://dash.cloudflare.com/?to=/:account/turnstile)
+   → **Turnstile** → add a widget, mode **Managed**, any domain (or your real
+   one once you have it).
+2. Copy the **site key** into `NEXT_PUBLIC_TURNSTILE_SITE_KEY`.
+3. Paste the **secret key** into Supabase's Turnstile field and enable it.
+
+Leave `NEXT_PUBLIC_TURNSTILE_SITE_KEY` unset to skip this entirely — fine for
+local dev, not recommended once the app is publicly reachable.
+
+### Analytics (optional)
+
+Set `NEXT_PUBLIC_GA_MEASUREMENT_ID` to a GA4 Measurement ID (`G-XXXXXXX`) to
+load Google Analytics on every page, marketing and app alike. Leave it unset
+and nothing loads — no script, no cookie, no request.
 
 ### 2. Environment
 
