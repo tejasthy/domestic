@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { kioskHousehold, loadKiosk, UNDOABLE_STATUS } from '@/lib/kiosk';
-import { getWeather } from '@/lib/weather';
+import { getWeather, geocodeHouseAddress } from '@/lib/weather';
 import { Logo } from '@/components/brand';
 import { Card, Initials, Pill, cx } from '@/components/ui';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -58,10 +58,16 @@ export default async function KioskPage({
   const onDemand = chores.filter((c) => c.cadence === 'on_demand');
   const upNextByChore = new Map(upNext.map((t) => [t.chore_id, t]));
 
-  const weather =
+  // An explicit Wall display location always wins; otherwise fall back to
+  // geocoding the house's own address so weather works without a separate
+  // admin step for the common case of "the weather where the house is."
+  const weatherLocation =
     household.latitude != null && household.longitude != null
-      ? await getWeather(household.latitude, household.longitude)
-      : null;
+      ? { lat: household.latitude, lon: household.longitude }
+      : household.address
+        ? await geocodeHouseAddress(household.address)
+        : null;
+  const weather = weatherLocation ? await getWeather(weatherLocation.lat, weatherLocation.lon) : null;
 
   const theme = parseThemeCookie((await cookies()).get(THEME_COOKIE)?.value);
 

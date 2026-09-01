@@ -139,7 +139,7 @@ export default async function HouseholdSettingsPage() {
         <section>
           <SectionHeader title="Wall display" />
           <div className="space-y-3">
-            <LocationSetting label={household.location_label} />
+            <LocationSetting label={household.location_label} address={household.address} />
             <KioskDevices
               timeZone={household.timezone}
               devices={kiosks.map((k) => ({
