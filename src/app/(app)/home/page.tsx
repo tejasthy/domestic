@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { getSession, getChores, getOpenTurns, getBalances, getKioskMessages } from '@/lib/data';
+import { getSession, getChores, getOpenTurns, getUpNext, getBalances, getKioskMessages } from '@/lib/data';
 import { TurnRow, FlagButton, SwapRequestRow } from '@/components/turn-card';
 import { KioskNote } from '@/components/kiosk-note';
 import { Card, EmptyState, SectionHeader, Initials } from '@/components/ui';
@@ -27,9 +27,10 @@ export default async function TodayPage() {
   const showKiosk = modules.includes('kiosk');
 
   const supabase = await createClient();
-  const [chores, turns, balances, kioskMessages, { data: swaps }] = await Promise.all([
+  const [chores, turns, upNext, balances, kioskMessages, { data: swaps }] = await Promise.all([
     showChores ? getChores() : Promise.resolve([]),
     showChores ? getOpenTurns() : Promise.resolve([]),
+    showChores ? getUpNext() : Promise.resolve([]),
     showMoney ? getBalances() : Promise.resolve<Record<string, number>>({}),
     showKiosk ? getKioskMessages() : Promise.resolve([]),
     supabase
@@ -54,6 +55,7 @@ export default async function TodayPage() {
   const theirs = turns.filter((t) => t.assignee_id !== me.id);
 
   const onDemand = chores.filter((c) => c.cadence === 'on_demand');
+  const upNextByChore = new Map(upNext.map((t) => [t.chore_id, t]));
   const myBalance = balances[me.id] ?? 0;
 
   return (
@@ -119,6 +121,7 @@ export default async function TodayPage() {
                 choreId={c.id}
                 emoji={c.emoji}
                 label={c.description ?? c.name}
+                flagged={upNextByChore.get(c.id)?.due_at != null}
               />
             ))}
           </div>
