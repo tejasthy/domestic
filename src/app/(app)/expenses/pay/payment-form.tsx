@@ -75,7 +75,7 @@ export function PaymentForm({ me, members }: { me: Profile; members: Profile[] }
         <p className="t-body-sm text-danger">Pick two different people.</p>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <Field label="Amount">
           <Input
             value={amount}
@@ -91,6 +91,7 @@ export function PaymentForm({ me, members }: { me: Profile; members: Profile[] }
             value={paidOn}
             onChange={(e) => setPaidOn(e.target.value)}
             required
+            className="appearance-none"
           />
         </Field>
       </div>
