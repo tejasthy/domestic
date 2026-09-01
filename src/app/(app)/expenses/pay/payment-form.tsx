@@ -51,7 +51,7 @@ export function PaymentForm({ me, members }: { me: Profile; members: Profile[] }
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Who paid" className="min-w-0">
+        <Field label="Who paid">
           <Select value={fromProfile} onChange={(e) => setFromProfile(e.target.value)}>
             {members.map((m) => (
               <option key={m.id} value={m.id}>
@@ -60,7 +60,7 @@ export function PaymentForm({ me, members }: { me: Profile; members: Profile[] }
             ))}
           </Select>
         </Field>
-        <Field label="Who received it" className="min-w-0">
+        <Field label="Who received it">
           <Select value={toProfile} onChange={(e) => setToProfile(e.target.value)}>
             {members.map((m) => (
               <option key={m.id} value={m.id}>
@@ -75,8 +75,8 @@ export function PaymentForm({ me, members }: { me: Profile; members: Profile[] }
         <p className="t-body-sm text-danger">Pick two different people.</p>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Amount" className="min-w-0">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Amount">
           <Input
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
@@ -85,13 +85,12 @@ export function PaymentForm({ me, members }: { me: Profile; members: Profile[] }
             required
           />
         </Field>
-        <Field label="Date" className="min-w-0">
+        <Field label="Date">
           <Input
             type="date"
             value={paidOn}
             onChange={(e) => setPaidOn(e.target.value)}
             required
-            className="min-w-0"
           />
         </Field>
       </div>

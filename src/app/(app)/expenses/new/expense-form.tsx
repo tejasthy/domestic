@@ -403,8 +403,8 @@ export function ExpenseForm({ mode = 'create', me, members, expense }: Props) {
         />
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Amount" className="min-w-0" hint={items ? 'Sum of the items below.' : undefined}>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Field label="Amount" hint={items ? 'Sum of the items below.' : undefined}>
           <Input
             value={items ? formatCents(itemsTotalCents) : amount}
             onChange={(e) => !items && setAmount(e.target.value)}
@@ -414,19 +414,18 @@ export function ExpenseForm({ mode = 'create', me, members, expense }: Props) {
             disabled={!!items}
           />
         </Field>
-        <Field label="Date" className="min-w-0">
+        <Field label="Date">
           <Input
             type="date"
             value={spentOn}
             onChange={(e) => setSpentOn(e.target.value)}
             required
-            className="min-w-0"
           />
         </Field>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Paid by" className="min-w-0">
+        <Field label="Paid by">
           <Select value={paidBy} onChange={(e) => setPaidBy(e.target.value)}>
             {members.map((m) => (
               <option key={m.id} value={m.id}>
@@ -435,7 +434,7 @@ export function ExpenseForm({ mode = 'create', me, members, expense }: Props) {
             ))}
           </Select>
         </Field>
-        <Field label="Category" className="min-w-0">
+        <Field label="Category">
           <Select value={category} onChange={(e) => setCategory(e.target.value)}>
             {CATEGORIES.map((c) => (
               <option key={c} value={c}>
