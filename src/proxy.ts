@@ -29,13 +29,18 @@ export async function proxy(request: NextRequest) {
   // Refreshes the auth cookie as a side effect — must not be removed.
   const { data: { user } } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
-  const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
+  const { pathname, search } = request.nextUrl;
+  // The marketing page is the one route the public gets to see logged out —
+  // everything else needs a session. An exact match, never a prefix: '/'
+  // would otherwise match every path via startsWith.
+  const isPublic = pathname === '/' || PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
-    url.searchParams.set('next', pathname);
+    // Keep the query string (an invite code, most importantly) so it
+    // survives the round trip through sign-in.
+    url.searchParams.set('next', pathname + search);
     return NextResponse.redirect(url);
   }
 
