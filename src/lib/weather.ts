@@ -42,7 +42,14 @@ async function geocodeQuery(query: string, revalidateSeconds: number): Promise<G
   url.searchParams.set('name', trimmed);
   url.searchParams.set('count', '1');
 
-  const res = await fetch(url, { next: { revalidate: revalidateSeconds } });
+  let res: Response;
+  try {
+    res = await fetch(url, { next: { revalidate: revalidateSeconds } });
+  } catch {
+    // Network blip against the external geocoder — the kiosk shouldn't crash
+    // over decorative weather, just skip it this refresh.
+    return null;
+  }
   if (!res.ok) return null;
 
   const data = await res.json();
@@ -142,7 +149,14 @@ export async function getWeather(lat: number, lon: number): Promise<Weather | nu
   url.searchParams.set('timezone', 'auto');
   url.searchParams.set('forecast_days', '7');
 
-  const res = await fetch(url, { next: { revalidate: 600 } });
+  let res: Response;
+  try {
+    res = await fetch(url, { next: { revalidate: 600 } });
+  } catch {
+    // Same reasoning as geocodeQuery: a flaky external API shouldn't crash
+    // the kiosk's force-dynamic render loop.
+    return null;
+  }
   if (!res.ok) return null;
 
   const data = await res.json();
