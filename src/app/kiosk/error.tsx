@@ -10,11 +10,16 @@ import { Logo } from '@/components/brand';
  * to dismiss. Self-heal instead: retry on a short timer until the transient
  * failure clears.
  */
-export default function KioskError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function KioskError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     const id = setTimeout(reset, 5000);
     return () => clearTimeout(id);
-  }, [reset]);
+    // `reset`'s identity is stable for the life of the error boundary, so it
+    // never re-triggers this effect. Depend on `error` instead — a fresh
+    // crash is a new Error instance, which re-arms the timer for the next
+    // attempt. Without this, a single failed retry leaves the display stuck
+    // forever with no timer left running.
+  }, [error, reset]);
 
   return (
     <main className="min-h-dvh grid place-items-center bg-page px-8 text-center">

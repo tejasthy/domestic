@@ -52,12 +52,19 @@ async function geocodeQuery(query: string, revalidateSeconds: number): Promise<G
   }
   if (!res.ok) return null;
 
-  const data = await res.json();
-  const hit = data?.results?.[0];
-  if (!hit) return null;
+  try {
+    const data = await res.json();
+    const hit = data?.results?.[0];
+    if (!hit || typeof hit.latitude !== 'number' || typeof hit.longitude !== 'number') return null;
 
-  const label = [hit.name, hit.admin1, hit.country_code].filter(Boolean).join(', ');
-  return { label, lat: hit.latitude, lon: hit.longitude };
+    const label = [hit.name, hit.admin1, hit.country_code].filter(Boolean).join(', ');
+    return { label, lat: hit.latitude, lon: hit.longitude };
+  } catch {
+    // Non-JSON or unexpected-shape 200 (rate-limit page, proxy interstitial,
+    // upstream schema drift) — same "skip this refresh" reasoning as a
+    // network failure above.
+    return null;
+  }
 }
 
 /** Free, keyless — resolves a place name to coordinates plus a display label.
@@ -159,56 +166,66 @@ export async function getWeather(lat: number, lon: number): Promise<Weather | nu
   }
   if (!res.ok) return null;
 
-  const data = await res.json();
-  const current = data?.current;
-  if (!current || typeof current.temperature_2m !== 'number') return null;
+  // Everything below assumes Open-Meteo's documented shape. A malformed body
+  // (non-JSON rate-limit page, proxy interstitial) or an undocumented schema
+  // drift (an array the code indexes into missing or shorter than expected)
+  // throws partway through — caught here so it degrades to "skip this
+  // refresh" like the network-failure case above, instead of crashing the
+  // kiosk's render.
+  try {
+    const data = await res.json();
+    const current = data?.current;
+    if (!current || typeof current.temperature_2m !== 'number') return null;
 
-  const info = WEATHER_CODES[current.weather_code] ?? { emoji: '🌡️', label: 'Weather' };
-  const daily = data?.daily;
-  const hourly = data?.hourly;
+    const info = WEATHER_CODES[current.weather_code] ?? { emoji: '🌡️', label: 'Weather' };
+    const daily = data?.daily;
+    const hourly = data?.hourly;
 
-  // current.time is sampled at 15-minute resolution (e.g. "…T13:30") but
-  // hourly.time only has on-the-hour entries (e.g. "…T13:00"), so an exact
-  // match against current.time always misses and silently falls back to
-  // midnight. Truncate to the hour first so "Now" lines up with reality.
-  const currentHour = `${current.time.slice(0, 13)}:00`;
-  const hourTimes: string[] = hourly?.time ?? [];
-  const startIndex = Math.max(0, hourTimes.indexOf(currentHour));
-  const hourPoints: HourlyForecast[] = hourTimes.slice(startIndex, startIndex + 24).map((time, i) => {
-    const idx = startIndex + i;
-    const code = hourly.weather_code[idx];
+    // current.time is sampled at 15-minute resolution (e.g. "…T13:30") but
+    // hourly.time only has on-the-hour entries (e.g. "…T13:00"), so an exact
+    // match against current.time always misses and silently falls back to
+    // midnight. Truncate to the hour first so "Now" lines up with reality.
+    const currentHour = `${current.time.slice(0, 13)}:00`;
+    const hourTimes: string[] = hourly?.time ?? [];
+    const startIndex = Math.max(0, hourTimes.indexOf(currentHour));
+    const hourPoints: HourlyForecast[] = hourTimes.slice(startIndex, startIndex + 24).map((time, i) => {
+      const idx = startIndex + i;
+      const code = hourly.weather_code[idx];
+      return {
+        hourLabel: i === 0 ? 'Now' : formatHourLabel(time),
+        tempF: Math.round(hourly.temperature_2m[idx]),
+        emoji: (WEATHER_CODES[code] ?? info).emoji,
+        precipChance: Math.round(hourly.precipitation_probability?.[idx] ?? 0),
+      };
+    });
+
+    const dayTimes: string[] = daily?.time ?? [];
+    const dayPoints: DailyForecast[] = dayTimes.map((date, i) => ({
+      weekday: formatWeekday(date, i),
+      emoji: (WEATHER_CODES[daily.weather_code[i]] ?? info).emoji,
+      highF: Math.round(daily.temperature_2m_max[i]),
+      lowF: Math.round(daily.temperature_2m_min[i]),
+      precipChance: Math.round(daily.precipitation_probability_max?.[i] ?? 0),
+    }));
+
     return {
-      hourLabel: i === 0 ? 'Now' : formatHourLabel(time),
-      tempF: Math.round(hourly.temperature_2m[idx]),
-      emoji: (WEATHER_CODES[code] ?? info).emoji,
-      precipChance: Math.round(hourly.precipitation_probability?.[idx] ?? 0),
+      tempF: Math.round(current.temperature_2m),
+      emoji: info.emoji,
+      label: info.label,
+      feelsLikeF: Math.round(current.apparent_temperature),
+      humidity: Math.round(current.relative_humidity_2m),
+      windMph: Math.round(current.wind_speed_10m),
+      windDirection: current.wind_direction_10m,
+      highF: Math.round(daily?.temperature_2m_max?.[0]),
+      lowF: Math.round(daily?.temperature_2m_min?.[0]),
+      uvIndex: Math.round(daily?.uv_index_max?.[0] ?? 0),
+      precipChance: Math.round(daily?.precipitation_probability_max?.[0] ?? 0),
+      sunrise: daily?.sunrise?.[0] ? formatClockLabel(daily.sunrise[0]) : '—',
+      sunset: daily?.sunset?.[0] ? formatClockLabel(daily.sunset[0]) : '—',
+      hourly: hourPoints,
+      daily: dayPoints,
     };
-  });
-
-  const dayTimes: string[] = daily?.time ?? [];
-  const dayPoints: DailyForecast[] = dayTimes.map((date, i) => ({
-    weekday: formatWeekday(date, i),
-    emoji: (WEATHER_CODES[daily.weather_code[i]] ?? info).emoji,
-    highF: Math.round(daily.temperature_2m_max[i]),
-    lowF: Math.round(daily.temperature_2m_min[i]),
-    precipChance: Math.round(daily.precipitation_probability_max?.[i] ?? 0),
-  }));
-
-  return {
-    tempF: Math.round(current.temperature_2m),
-    emoji: info.emoji,
-    label: info.label,
-    feelsLikeF: Math.round(current.apparent_temperature),
-    humidity: Math.round(current.relative_humidity_2m),
-    windMph: Math.round(current.wind_speed_10m),
-    windDirection: current.wind_direction_10m,
-    highF: Math.round(daily?.temperature_2m_max?.[0]),
-    lowF: Math.round(daily?.temperature_2m_min?.[0]),
-    uvIndex: Math.round(daily?.uv_index_max?.[0] ?? 0),
-    precipChance: Math.round(daily?.precipitation_probability_max?.[0] ?? 0),
-    sunrise: daily?.sunrise?.[0] ? formatClockLabel(daily.sunrise[0]) : '—',
-    sunset: daily?.sunset?.[0] ? formatClockLabel(daily.sunset[0]) : '—',
-    hourly: hourPoints,
-    daily: dayPoints,
-  };
+  } catch {
+    return null;
+  }
 }
