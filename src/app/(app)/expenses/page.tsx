@@ -209,12 +209,12 @@ export default async function ExpensesPage() {
                   </summary>
                   <div className="px-4 pb-3 pl-[4.25rem] -mt-1 space-y-1.5">
                     {e.items.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between gap-3">
-                        <span className="t-body-sm text-ink-muted truncate">
+                      <div key={item.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                        <span className="t-body-sm text-ink-muted min-w-0 break-words">
                           {item.name}
                           {item.kind !== 'item' && ` · ${item.kind}`}
                         </span>
-                        <span className="t-body-sm text-ink-2 tabular-nums shrink-0 text-right">
+                        <span className="t-body-sm text-ink-2 tabular-nums min-w-0 text-right break-words">
                           {formatCents(item.amount_cents)}
                           {' — '}
                           {item.item_splits
