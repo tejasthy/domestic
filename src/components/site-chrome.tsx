@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { Logo, Wordmark } from '@/components/brand';
 
+const REPO = 'https://github.com/tejasthy/domestic';
+
 /**
  * Nav and footer for the pages the public can reach logged out — the
  * marketing page and the two legal ones. Shared so the footer's legal links
@@ -30,10 +32,18 @@ export function SiteFooter() {
         <div className="flex items-center gap-2.5">
           <Logo size={22} />
           <span className="t-body-sm text-ink-muted">
-            Domestic — the fridge chart, minus the guesswork.
+            Domestic — hold your roommates accountable. Free & open source.
           </span>
         </div>
         <nav className="flex items-center gap-5">
+          <a
+            href={REPO}
+            target="_blank"
+            rel="noreferrer"
+            className="t-body-sm text-ink-muted hover:text-ink transition-colors"
+          >
+            GitHub
+          </a>
           <Link href="/privacy" className="t-body-sm text-ink-muted hover:text-ink transition-colors">
             Privacy
           </Link>

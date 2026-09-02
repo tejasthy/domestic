@@ -10,8 +10,10 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: 'Domestic — chores and shared costs, split fairly',
   description:
-    'The fridge chart and the group-chat IOUs, digitized. A fixed chore rotation and remainder-safe expense splitting for any house.',
+    'Free, open-source chore and expense tracking for roommates. A fixed rotation nobody can quietly reassign, and AI receipt scanning that splits shared costs to the cent.',
 };
+
+const REPO = 'https://github.com/tejasthy/domestic';
 
 const DEMO_PEOPLE = [
   { name: 'Sam', initials: 'SM', color: '#2f65a7' },
@@ -58,14 +60,15 @@ function Hero() {
       </ParallaxLayer>
 
       <div className="relative max-w-3xl mx-auto text-center">
-        <p className="t-label text-accent mb-4">Chores + shared costs, one app</p>
+        <p className="t-label text-accent mb-4">Free, open source · chores + shared costs</p>
         <h1 className="t-display-xl text-ink">
-          The fridge chart, <br className="hidden sm:block" />
-          minus the guesswork.
+          Hold your roommates <br className="hidden sm:block" />
+          accountable.
         </h1>
         <p className="t-body-lg text-ink-2 mt-5 max-w-xl mx-auto">
           A fixed chore rotation nobody can quietly reassign, and expense
-          splits that settle to the cent — for a household of any size,
+          splits — read straight off the receipt by AI — that always settle
+          to the cent. Free and open source, for a household of any size,
           not just ours.
         </p>
 
@@ -195,10 +198,10 @@ function ChoresFeature() {
 function ExpensesFeature() {
   return (
     <FeatureSection
-      eyebrow="Shared costs"
+      eyebrow="Shared costs · AI receipt scanning"
       reverse
-      title="Split to the cent, settle in the fewest payments."
-      body="Snap a receipt and let it fill in the line items. Split evenly, by exact amount, or by share — the math is remainder-safe, so it always adds back up to the total. When it's time to pay, Domestic works out the smallest set of transfers that clears the whole house."
+      title="Snap a receipt. AI itemizes it for you."
+      body="Take a photo of the receipt and Domestic reads the line items automatically — no manual entry. Split evenly, by exact amount, or by share — the math is remainder-safe, so it always adds back up to the total. When it's time to pay, Domestic works out the smallest set of transfers that clears the whole house."
       mockup={<ExpensesMockup />}
     />
   );
@@ -252,7 +255,10 @@ function ExpensesMockup() {
   ];
   return (
     <Card className="p-4">
-      <p className="t-label text-ink-muted mb-3">Shared costs</p>
+      <div className="flex items-center justify-between mb-3">
+        <p className="t-label text-ink-muted">Shared costs</p>
+        <Pill tone="info">🧾 Scanned by AI</Pill>
+      </div>
       <div className="divide-y divide-[var(--border-subtle)]">
         {rows.map((r) => (
           <div key={r.desc} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
@@ -353,9 +359,9 @@ function FinalCta() {
       <Reveal className="relative max-w-2xl mx-auto text-center">
         <h2 className="t-display-lg text-white">Ready to ditch the spreadsheet?</h2>
         <p className="t-body-lg text-white/80 mt-4">
-          Free to run, remainder-safe by design, and it fits your house — not just mine.
+          Free and open source, remainder-safe by design, and it fits your house — not just mine.
         </p>
-        <div className="mt-8">
+        <div className="mt-8 flex flex-col items-center gap-4">
           {/* This band stays blue in both themes, so the button can't ride
               the usual secondary-tone dark: swap — it would blend right in. */}
           <LinkButton
@@ -366,6 +372,14 @@ function FinalCta() {
           >
             Start your house
           </LinkButton>
+          <a
+            href={REPO}
+            target="_blank"
+            rel="noreferrer"
+            className="t-body-sm font-semibold text-white/70 hover:text-white transition-colors"
+          >
+            View the source on GitHub →
+          </a>
         </div>
       </Reveal>
     </section>

@@ -57,7 +57,7 @@ export default async function LoginPage({
         <LoginForm next={next || '/home'} />
 
         <p className="t-body-sm text-ink-muted text-center mt-6">
-          The fridge chart, minus the guesswork.
+          Hold your roommates accountable.
         </p>
       </div>
     </main>
