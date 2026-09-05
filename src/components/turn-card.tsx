@@ -32,6 +32,7 @@ function dueLabel(turn: Turn, timeZone: string) {
 export function TurnRow({
   turn,
   mine,
+  isOwnTurn,
   crossComplete = false,
   timeZone,
   className,
@@ -39,7 +40,16 @@ export function TurnRow({
   getAheadEnabled = false,
 }: {
   turn: Turn;
+  /** Shows the primary Pass/Skip/Done controls. */
   mine: boolean;
+  /**
+   * Whether the viewer is the turn's assignee, for get-ahead/defer
+   * eligibility specifically — independent of `mine`. "Coming up for you"
+   * rows pass `mine={false}` on purpose (no premature complete/skip button
+   * for something not due yet) but are still the viewer's own turn, which is
+   * exactly what get-ahead/defer are for. Defaults to `mine` when omitted.
+   */
+  isOwnTurn?: boolean;
   /** Household setting: anyone can complete anyone's turn. */
   crossComplete?: boolean;
   timeZone: string;
@@ -55,8 +65,9 @@ export function TurnRow({
   const [error, setError] = useState<string | null>(null);
   const due = dueLabel(turn, timeZone);
   const canComplete = mine || crossComplete;
-  const canGetAhead = mine && getAheadEnabled && turn.chore.cadence !== 'standing';
-  const canDefer = mine && getAheadEnabled && turn.chore.cadence !== 'standing' && turn.due_at != null;
+  const ownTurn = isOwnTurn ?? mine;
+  const canGetAhead = ownTurn && getAheadEnabled && turn.chore.cadence !== 'standing';
+  const canDefer = ownTurn && getAheadEnabled && turn.chore.cadence !== 'standing' && turn.due_at != null;
   const flaggedStanding = turn.chore.cadence === 'standing' && turn.flagged_at != null;
 
   function onComplete() {
@@ -298,6 +309,45 @@ export function TurnRow({
 
       {error && <p className="t-body-sm text-danger mt-2">{error}</p>}
     </Card>
+  );
+}
+
+/**
+ * A standalone "get ahead" entry point for a chore, for when it isn't your
+ * turn yet — TurnRow only ever renders the chore's current up-next turn, so
+ * without this there'd be no way to act on a future turn that hasn't
+ * materialized into a card at all. Only shown when it isn't already your
+ * turn (TurnRow covers that case).
+ */
+export function GetAheadChip({ choreId, choreName }: { choreId: string; choreName: string }) {
+  const [pending, start] = useTransition();
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (done) {
+    return <p className="t-body-sm text-ink-muted px-4 py-2">Got it — done ahead of schedule.</p>;
+  }
+
+  return (
+    <div className="px-4 py-2">
+      <button
+        type="button"
+        onClick={() => {
+          setError(null);
+          start(async () => {
+            const res = await getAhead(choreId);
+            if (res.ok) setDone(true);
+            else setError(res.error);
+          });
+        }}
+        disabled={pending}
+        className="flex items-center gap-1.5 t-body-sm font-medium text-accent disabled:opacity-50"
+      >
+        <Icon.FastForward size={16} />
+        {pending ? 'Getting ahead…' : `Get ahead on ${choreName}`}
+      </button>
+      {error && <p className="t-body-sm text-danger mt-1">{error}</p>}
+    </div>
   );
 }
 

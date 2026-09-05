@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { getChores, getUpNext, getChoreStats, getRecentlyDone, requireModule, getGetAheadSettings } from '@/lib/data';
-import { TurnRow, RecentlyDoneRow } from '@/components/turn-card';
+import { TurnRow, RecentlyDoneRow, GetAheadChip } from '@/components/turn-card';
 import { Card, SectionHeader, Initials, Pill, cx } from '@/components/ui';
 import { describeCadence, upcomingRotation } from '@/lib/rotation';
 import { formatInTimeZone } from '@/lib/timezone';
@@ -62,6 +62,11 @@ export default async function ChoresPage() {
 
           const choreStats = stats.filter((s) => s.chore_id === chore.id);
           const total = choreStats.reduce((acc, s) => acc + s.done_count, 0);
+          const canGetAheadHere =
+            getAheadSettings.enabled
+            && chore.cadence !== 'standing'
+            && order.some((p) => p.id === me.id)
+            && turn?.assignee_id !== me.id;
 
           return (
             <Card key={chore.id} className="overflow-hidden">
@@ -104,6 +109,12 @@ export default async function ChoresPage() {
                   </div>
                 )}
               </div>
+
+              {canGetAheadHere && (
+                <div className="border-t border-subtle">
+                  <GetAheadChip choreId={chore.id} choreName={chore.name} />
+                </div>
+              )}
 
               {turn && (
                 <div className="border-t border-subtle bg-sunken/50 p-3">
