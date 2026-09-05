@@ -1,8 +1,9 @@
 \set ON_ERROR_STOP on
 
--- Same trick auth_shim.sql uses for request.user_id: fake the one-per-
--- deployment GUC a real install sets with `alter database ... set ...`.
-select set_config('app.platform_admin_emails', 'admin@platform.com', false);
+-- set_platform_admin_emails is service_role-only in production (0030), but
+-- tests run as the postgres superuser, which bypasses grant/revoke checks —
+-- same as every other service-role-locked RPC this suite exercises directly.
+select set_platform_admin_emails(array['admin@platform.com']);
 
 insert into households (id, name, timezone)
 values ('4d5d4d5d-4d5d-4d5d-4d5d-4d5d4d5d4d5d', 'Platform Admin Test House', 'America/Detroit');
@@ -17,10 +18,21 @@ select set_config('request.user_id', '4d5d4d5d-0000-0000-0000-000000000001', fal
 do $$
 begin
   if not is_platform_admin() then
-    raise exception 'FAIL: the profile whose email is in app.platform_admin_emails should be a platform admin';
+    raise exception 'FAIL: the profile whose email is in the allowlist should be a platform admin';
   end if;
 end $$;
 \echo '  ok  is_platform_admin is true for an allow-listed email'
+
+-- Case/whitespace insensitive, both sides.
+do $$
+begin
+  perform set_platform_admin_emails(array['  ADMIN@Platform.com  ']);
+  if not is_platform_admin() then
+    raise exception 'FAIL: set_platform_admin_emails should normalize case and whitespace';
+  end if;
+  perform set_platform_admin_emails(array['admin@platform.com']);
+end $$;
+\echo '  ok  set_platform_admin_emails normalizes case and whitespace'
 
 select set_config('request.user_id', '4d5d4d5d-0000-0000-0000-000000000002', false);
 do $$
@@ -31,19 +43,19 @@ begin
 end $$;
 \echo '  ok  is_platform_admin is false for everyone else'
 
--- With the GUC entirely unset, nobody is a platform admin — safe by default
--- for a fresh deployment that never configured one.
-select set_config('app.platform_admin_emails', '', false);
+-- With the allowlist empty, nobody is a platform admin — safe by default for
+-- a fresh deployment that never ran the bootstrap script.
+select set_platform_admin_emails(array[]::text[]);
 select set_config('request.user_id', '4d5d4d5d-0000-0000-0000-000000000001', false);
 do $$
 begin
   if is_platform_admin() then
-    raise exception 'FAIL: an unset allowlist should mean nobody is a platform admin';
+    raise exception 'FAIL: an empty allowlist should mean nobody is a platform admin';
   end if;
 end $$;
-\echo '  ok  is_platform_admin is false for everyone when the GUC is unset'
+\echo '  ok  is_platform_admin is false for everyone when the allowlist is empty'
 
-select set_config('app.platform_admin_emails', 'admin@platform.com', false);
+select set_platform_admin_emails(array['admin@platform.com']);
 
 -- --------------------------------------------------------------- feedback
 

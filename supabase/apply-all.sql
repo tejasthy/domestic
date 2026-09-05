@@ -7,7 +7,7 @@
 -- statement is idempotent, so running this again is a no-op — you do not need
 -- to track which migrations you have already applied.
 --
--- Contains: 0001_init.sql, 0002_logic.sql, 0003_invites_and_oauth.sql, 0004_multi_household.sql, 0005_modules.sql, 0006_devices.sql, 0007_intro.sql, 0008_pgcrypto_schema.sql, 0009_chore_admin.sql, 0010_recurring_expenses.sql, 0011_ai_config.sql, 0012_kiosk_interactivity.sql, 0013_split_adjustment.sql, 0014_expense_items.sql, 0015_lock_kiosk_rpcs_from_anon.sql, 0016_kiosk_dismiss_message.sql, 0017_update_expense.sql, 0018_skip_and_undo_turn.sql, 0019_kiosk_undo_turn.sql, 0020_away_and_pass_turn.sql, 0021_standing_chores.sql, 0022_turn_flags.sql, 0023_get_ahead_and_defer.sql, 0024_geofence.sql, 0025_platform_admin_identity.sql, 0026_feedback.sql, 0027_platform_stats.sql, 0028_standing_chore_flag.sql, 0029_swap_get_ahead_defer.sql
+-- Contains: 0001_init.sql, 0002_logic.sql, 0003_invites_and_oauth.sql, 0004_multi_household.sql, 0005_modules.sql, 0006_devices.sql, 0007_intro.sql, 0008_pgcrypto_schema.sql, 0009_chore_admin.sql, 0010_recurring_expenses.sql, 0011_ai_config.sql, 0012_kiosk_interactivity.sql, 0013_split_adjustment.sql, 0014_expense_items.sql, 0015_lock_kiosk_rpcs_from_anon.sql, 0016_kiosk_dismiss_message.sql, 0017_update_expense.sql, 0018_skip_and_undo_turn.sql, 0019_kiosk_undo_turn.sql, 0020_away_and_pass_turn.sql, 0021_standing_chores.sql, 0022_turn_flags.sql, 0023_get_ahead_and_defer.sql, 0024_geofence.sql, 0025_platform_admin_identity.sql, 0026_feedback.sql, 0027_platform_stats.sql, 0028_standing_chore_flag.sql, 0029_swap_get_ahead_defer.sql, 0030_platform_admin_table.sql
 
 /**************************************************************************
  * 0001_init.sql
@@ -5761,3 +5761,81 @@ begin
   return t;
 end;
 $$;
+
+
+/**************************************************************************
+ * 0030_platform_admin_table.sql
+ *************************************************************************/
+
+-- Fourth course-correction: 0025's is_platform_admin() relied on a Postgres
+-- GUC set via `alter database ... set app.platform_admin_emails = '...'`.
+-- Confirmed against the real project: Supabase's managed Postgres refuses
+-- that statement outright ("permission denied to set parameter") for every
+-- role available to a project owner, including the SQL Editor's — not a
+-- permissions oversight on our end, a platform-wide restriction. The GUC
+-- design cannot work here at all, on this project or anyone else's.
+--
+-- Replacement: a one-row, zero-RLS-policy table (same locked-down pattern as
+-- household_ai_config/feedback_submissions), writable only by a
+-- service-role-only RPC — bootstrapped by running a small local script with
+-- the service role key every deployment already has
+-- (scripts/set-platform-admin.mjs), the same way this repo already asks you
+-- to run `npm run gen:secrets`/`npm run gen:vapid` once per deployment.
+
+create table if not exists platform_config (
+  id           boolean primary key default true check (id),
+  admin_emails text[]  not null default '{}'
+);
+
+insert into platform_config (id) values (true) on conflict do nothing;
+
+alter table platform_config enable row level security;
+-- No policies at all — every read goes through is_platform_admin() below,
+-- every write through set_platform_admin_emails(), never a direct query.
+
+create or replace function is_platform_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select lower(email) from profiles where id = auth.uid())
+      = any (select lower(e) from platform_config, unnest(admin_emails) as e where id = true),
+    false
+  );
+$$;
+
+-- service_role only — the same lockdown shape 0015 uses for the kiosk RPCs.
+-- Never callable by a signed-in member: this is exactly the allowlist that
+-- decides who can act as a platform operator, so it must not be settable by
+-- anyone the RPC itself would call a platform admin.
+create or replace function set_platform_admin_emails(p_emails text[])
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update platform_config
+     set admin_emails = (select coalesce(array_agg(lower(trim(e))), '{}') from unnest(p_emails) e where trim(e) <> '')
+   where id = true;
+end;
+$$;
+
+do $$
+declare r text;
+begin
+  foreach r in array array['authenticated', 'anon', 'domestic_app'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('revoke execute on function set_platform_admin_emails(text[]) from %I', r);
+    end if;
+  end loop;
+
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function set_platform_admin_emails(text[]) to service_role;
+  end if;
+end $$;
+
+revoke execute on function set_platform_admin_emails(text[]) from public;
