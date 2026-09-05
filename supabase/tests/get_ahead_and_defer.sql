@@ -38,7 +38,8 @@ select '2b3b2b3b-2222-2222-2222-222222222222', id,
 from profiles
 where household_id = '2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b' and initials in ('OP','TP');
 
--- StandingX: to confirm both RPCs reject this cadence outright.
+-- StandingX: rotation OP(0) > TP(1) — since 0033, get_ahead/defer_turn now
+-- support standing chores too (they used to be excluded outright).
 insert into chores (id, household_id, name, emoji, cadence)
 values ('2b3b2b3b-3333-3333-3333-333333333333','2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b',
         'StandingX','♻️','standing');
@@ -49,9 +50,23 @@ select '2b3b2b3b-3333-3333-3333-333333333333', id,
 from profiles
 where household_id = '2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b' and initials in ('OP','TP');
 
+-- NoAdvance: on demand, rotation OP(0) > TP(1), but this specific chore opts
+-- out of both get-ahead and defer (0033's per-chore allow_get_ahead/allow_defer),
+-- independent of the household-wide toggle.
+insert into chores (id, household_id, name, emoji, cadence, queue_depth, allow_get_ahead, allow_defer)
+values ('2b3b2b3b-4444-4444-4444-444444444444','2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b',
+        'NoAdvance','🔒','on_demand',2,false,false);
+
+insert into chore_rotation (chore_id, profile_id, position)
+select '2b3b2b3b-4444-4444-4444-444444444444', id,
+       case initials when 'OP' then 0 else 1 end
+from profiles
+where household_id = '2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b' and initials in ('OP','TP');
+
 select top_up_queue('2b3b2b3b-1111-1111-1111-111111111111');
 select materialize_schedule('2b3b2b3b-2222-2222-2222-222222222222');
 select top_up_queue('2b3b2b3b-3333-3333-3333-333333333333');
+select top_up_queue('2b3b2b3b-4444-4444-4444-444444444444');
 
 /* ================================================================ get_ahead */
 
@@ -135,18 +150,33 @@ begin
 end $$;
 \echo '  ok  get_ahead refuses someone outside the chore''s rotation'
 
--- Standing chores are excluded outright.
-select set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000001', false);
+-- Standing chores now support get_ahead (0033). StandingX's only pending turn
+-- (turn 0) belongs to OP; TP getting ahead swaps into it, materializing TP's
+-- own next standing turn for OP to hold in exchange — same swap as any other
+-- cadence, just briefly two pending turns instead of the usual one.
+select set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000002', false);
 do $$
+declare current_turn_id uuid; owner text; pending_count int;
 begin
-  begin
-    perform get_ahead('2b3b2b3b-3333-3333-3333-333333333333');
-    raise exception 'FAIL: get_ahead should refuse a standing chore';
-  exception when others then
-    if sqlerrm not like '%standing chores%' then raise; end if;
-  end;
+  select id into current_turn_id from chore_turns
+  where chore_id = '2b3b2b3b-3333-3333-3333-333333333333' and status = 'pending'
+  order by turn_number limit 1;
+
+  perform get_ahead('2b3b2b3b-3333-3333-3333-333333333333');
+
+  select p.initials into owner from chore_turns t join profiles p on p.id = t.assignee_id
+  where t.id = current_turn_id;
+  if owner <> 'TP' then
+    raise exception 'FAIL: get_ahead should hand the standing chore''s current turn to the caller (TP), got %', owner;
+  end if;
+
+  select count(*) into pending_count from chore_turns
+  where chore_id = '2b3b2b3b-3333-3333-3333-333333333333' and status = 'pending';
+  if pending_count <> 2 then
+    raise exception 'FAIL: get_ahead on a standing chore should briefly leave two pending turns, got %', pending_count;
+  end if;
 end $$;
-\echo '  ok  get_ahead refuses standing chores'
+\echo '  ok  get_ahead now works on standing chores (0033), briefly leaving two pending turns that resolve as usual'
 
 -- The household can turn the whole feature off.
 insert into household_modules (household_id, module, enabled)
@@ -227,19 +257,68 @@ begin
 end $$;
 \echo '  ok  defer_turn refuses to act on someone else''s turn'
 
--- Standing chores are excluded outright.
+-- Standing chores now support defer_turn too (0033). OP holds one of
+-- StandingX's two pending turns (from the get_ahead swap above) and defers
+-- it to TP, taking a different pending turn on the same chore in exchange.
 select set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000001', false);
 do $$
-declare standing_turn uuid;
+declare op_turn_id uuid; owner text; op_holds_another boolean;
 begin
-  select id into standing_turn from chore_turns
-  where chore_id = '2b3b2b3b-3333-3333-3333-333333333333' and status = 'pending';
+  select id into op_turn_id from chore_turns
+  where chore_id = '2b3b2b3b-3333-3333-3333-333333333333' and status = 'pending'
+    and assignee_id = '2b3b2b3b-0000-0000-0000-000000000001'
+  order by turn_number limit 1;
+  if op_turn_id is null then raise exception 'FAIL: setup — OP should hold a pending StandingX turn'; end if;
 
+  perform defer_turn(op_turn_id);
+
+  select p.initials into owner from chore_turns t join profiles p on p.id = t.assignee_id
+  where t.id = op_turn_id;
+  if owner <> 'TP' then
+    raise exception 'FAIL: defer_turn should hand the standing chore''s turn to the next person (TP), got %', owner;
+  end if;
+
+  select exists (
+    select 1 from chore_turns
+    where chore_id = '2b3b2b3b-3333-3333-3333-333333333333' and status = 'pending'
+      and assignee_id = '2b3b2b3b-0000-0000-0000-000000000001' and id <> op_turn_id
+  ) into op_holds_another;
+  if not op_holds_another then
+    raise exception 'FAIL: OP should hold a different pending StandingX turn after deferring';
+  end if;
+end $$;
+\echo '  ok  defer_turn now works on standing chores (0033)'
+
+/* ---------------------------------------------------- per-chore overrides */
+
+-- A chore can opt out of get-ahead/defer even while the household toggle is
+-- on (0033's allow_get_ahead/allow_defer columns).
+select set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000002', false);
+do $$
+begin
   begin
-    perform defer_turn(standing_turn);
-    raise exception 'FAIL: defer_turn should refuse a standing chore';
+    perform get_ahead('2b3b2b3b-4444-4444-4444-444444444444');
+    raise exception 'FAIL: get_ahead should refuse when the chore itself disallows it';
   exception when others then
-    if sqlerrm not like '%standing chores%' then raise; end if;
+    if sqlerrm not like '%get-ahead is turned off for this chore%' then raise; end if;
   end;
 end $$;
-\echo '  ok  defer_turn refuses standing chores'
+\echo '  ok  get_ahead respects a chore-level allow_get_ahead = false, even with the household toggle on'
+
+select set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000001', false);
+do $$
+declare a_turn uuid;
+begin
+  select id into a_turn from chore_turns
+  where chore_id = '2b3b2b3b-4444-4444-4444-444444444444' and status = 'pending'
+    and assignee_id = '2b3b2b3b-0000-0000-0000-000000000001'
+  order by turn_number limit 1;
+
+  begin
+    perform defer_turn(a_turn);
+    raise exception 'FAIL: defer_turn should refuse when the chore itself disallows it';
+  exception when others then
+    if sqlerrm not like '%defer is turned off for this chore%' then raise; end if;
+  end;
+end $$;
+\echo '  ok  defer_turn respects a chore-level allow_defer = false, even with the household toggle on'

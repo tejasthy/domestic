@@ -110,7 +110,7 @@ export default async function TodayPage() {
         ) : (
           <div className="space-y-3">
             {mineNow.map((t) => (
-              <TurnRow key={t.id} turn={t} mine crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
+              <TurnRow key={t.id} turn={t} mine crossComplete={household.allow_member_cross_complete} isAdmin={me.is_admin} timeZone={household.timezone} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
             ))}
           </div>
         )}
@@ -150,7 +150,7 @@ export default async function TodayPage() {
           />
           <div className="space-y-3">
             {theirs.slice(0, 6).map((t) => (
-              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
+              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} isAdmin={me.is_admin} timeZone={household.timezone} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
             ))}
           </div>
         </section>
@@ -161,7 +161,7 @@ export default async function TodayPage() {
           <SectionHeader title="Coming up for you" />
           <div className="space-y-3">
             {mineLater.map((t) => (
-              <TurnRow key={t.id} turn={t} mine={false} isOwnTurn crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
+              <TurnRow key={t.id} turn={t} mine={false} isOwnTurn crossComplete={household.allow_member_cross_complete} isAdmin={me.is_admin} timeZone={household.timezone} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
             ))}
           </div>
         </section>

@@ -21,6 +21,11 @@ select '66666666-1111-1111-1111-111111111111', id,
        case initials when 'OP' then 0 when 'TP' then 1 else 2 end
 from profiles where household_id = '66666666-6666-6666-6666-666666666666';
 
+-- OP is the household admin — needed for the admin-only cross-person pass
+-- check near the end of this file (0033).
+update profiles set is_admin = true
+ where household_id = '66666666-6666-6666-6666-666666666666' and initials = 'OP';
+
 -- Solo: on-demand, single-person rotation (OP only).
 insert into chores (id, household_id, name, emoji, cadence, queue_depth)
 values ('66666666-2222-2222-2222-222222222222','66666666-6666-6666-6666-666666666666',
@@ -260,3 +265,46 @@ begin
   end if;
 end $$;
 \echo '  ok  materialize_schedule resumes for whoever is back, still skipping whoever is still away'
+
+-- --------------------------------------------------- admin-only cross-pass
+
+-- pass_turn refuses a non-admin acting for someone else (0033: this used to
+-- be gated by allow_member_cross_complete; it now requires a household admin).
+select set_config('request.user_id', '66666666-0000-0000-0000-000000000003', false);
+
+do $$
+declare tp_turn uuid;
+begin
+  insert into chore_turns (id, chore_id, household_id, turn_number, assignee_id, status, due_at)
+  values (gen_random_uuid(), '66666666-1111-1111-1111-111111111111',
+          '66666666-6666-6666-6666-666666666666', 300,
+          '66666666-0000-0000-0000-000000000002', 'pending', now() + interval '1 day')
+  returning id into tp_turn;
+
+  begin
+    perform pass_turn(tp_turn);
+    raise exception 'FAIL: pass_turn should refuse a non-admin acting for another member';
+  exception when others then
+    if sqlerrm not like '%only an admin can pass this for someone else%' then raise; end if;
+  end;
+end $$;
+\echo '  ok  pass_turn refuses a non-admin acting for another member'
+
+-- An admin can pass someone else's turn.
+select set_config('request.user_id', '66666666-0000-0000-0000-000000000001', false);
+do $$
+declare tp_turn uuid;
+begin
+  select id into tp_turn from chore_turns where turn_number = 300
+   and chore_id = '66666666-1111-1111-1111-111111111111';
+
+  perform pass_turn(tp_turn);
+
+  if (select assignee_id from chore_turns where id = tp_turn) = '66666666-0000-0000-0000-000000000002' then
+    raise exception 'FAIL: an admin passing another member''s turn should hand it to the next person';
+  end if;
+  if (select status from chore_turns where id = tp_turn) <> 'pending' then
+    raise exception 'FAIL: pass_turn must leave the turn pending';
+  end if;
+end $$;
+\echo '  ok  an admin can pass another member''s turn'

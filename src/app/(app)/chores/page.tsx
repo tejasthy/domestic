@@ -64,7 +64,7 @@ export default async function ChoresPage() {
           const total = choreStats.reduce((acc, s) => acc + s.done_count, 0);
           const canGetAheadHere =
             getAheadSettings.enabled
-            && chore.cadence !== 'standing'
+            && chore.allow_get_ahead
             && order.some((p) => p.id === me.id)
             && turn?.assignee_id !== me.id;
 

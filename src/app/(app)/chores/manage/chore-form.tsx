@@ -43,6 +43,8 @@ export function ChoreForm(props: ChoreFormProps) {
   const [dueHour, setDueHour] = useState(chore?.due_hour ?? 20);
   const [queueDepth, setQueueDepth] = useState(chore?.queue_depth ?? 4);
   const [lookaheadDays, setLookaheadDays] = useState(chore?.lookahead_days ?? 21);
+  const [allowGetAhead, setAllowGetAhead] = useState(chore?.allow_get_ahead ?? true);
+  const [allowDefer, setAllowDefer] = useState(chore?.allow_defer ?? true);
   const [rotation, setRotation] = useState<string[]>(
     props.mode === 'edit' ? props.initialRotation : members.map((m) => m.id),
   );
@@ -74,6 +76,8 @@ export function ChoreForm(props: ChoreFormProps) {
       queue_depth: cadence === 'standing' ? 1 : queueDepth,
       lookahead_days: lookaheadDays,
       profile_ids: rotation,
+      allow_get_ahead: allowGetAhead,
+      allow_defer: allowDefer,
     };
 
     startSubmit(async () => {
@@ -228,6 +232,38 @@ export function ChoreForm(props: ChoreFormProps) {
             />
           </Field>
         )}
+
+        <div>
+          <span className="t-label text-ink-muted block mb-1.5">Getting ahead &amp; deferring</span>
+          <p className="t-body-sm text-ink-muted mb-2">
+            Lets someone trade places with whoever&rsquo;s up now (or next), within
+            the house&rsquo;s own limits. Turn either off for a chore that
+            shouldn&rsquo;t be juggled — a hard deadline, say.
+          </p>
+          <div className="flex gap-2">
+            {(
+              [
+                { key: 'get_ahead' as const, label: 'Get ahead', on: allowGetAhead, set: setAllowGetAhead },
+                { key: 'defer' as const, label: 'Defer', on: allowDefer, set: setAllowDefer },
+              ]
+            ).map(({ key, label, on, set }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => set(!on)}
+                aria-pressed={on}
+                className={cx(
+                  'flex-1 h-11 rounded-md border font-medium text-[14px] transition-colors duration-[120ms]',
+                  on
+                    ? 'border-maize bg-maize/12 text-ink'
+                    : 'border-subtle bg-card opacity-60 hover:opacity-100 text-ink-2',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div>
           <span className="t-label text-ink-muted block mb-2">Rotation</span>

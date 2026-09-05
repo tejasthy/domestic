@@ -41,6 +41,7 @@ export function TurnRow({
   mine,
   isOwnTurn,
   crossComplete = false,
+  isAdmin = false,
   timeZone,
   className,
   geofenceEnabled = false,
@@ -59,6 +60,8 @@ export function TurnRow({
   isOwnTurn?: boolean;
   /** Household setting: anyone can complete anyone's turn. */
   crossComplete?: boolean;
+  /** Whether the viewer is a household admin — required to pass/skip someone else's turn. */
+  isAdmin?: boolean;
   timeZone: string;
   className?: string;
   /** Household setting: completion must happen within a radius of home. */
@@ -72,12 +75,15 @@ export function TurnRow({
   const [error, setError] = useState<string | null>(null);
   const due = dueLabel(turn, timeZone, mine);
   const canComplete = mine || crossComplete;
+  // Passing/skipping someone else's turn is admin-only; completing it for
+  // them is not (that's just doing the chore, not reshuffling the rotation).
+  const canSkipOrPass = mine || (crossComplete && isAdmin);
   const ownTurn = isOwnTurn ?? mine;
   // Get-ahead only makes sense before it's your turn (it trades places with
   // whoever currently holds it); defer only makes sense once it is (it hands
   // your current turn to the next person and takes their upcoming one).
-  const canGetAhead = ownTurn && !mine && getAheadEnabled && turn.chore.cadence !== 'standing';
-  const canDefer = mine && getAheadEnabled && turn.chore.cadence !== 'standing';
+  const canGetAhead = ownTurn && !mine && getAheadEnabled && turn.chore.allow_get_ahead;
+  const canDefer = mine && getAheadEnabled && turn.chore.allow_defer;
   const flaggedStanding = turn.chore.cadence === 'standing' && turn.flagged_at != null;
 
   function onComplete() {
@@ -270,7 +276,7 @@ export function TurnRow({
           </button>
         )}
 
-        {canComplete && (
+        {canSkipOrPass && (
           <>
             <button
               type="button"
@@ -300,20 +306,22 @@ export function TurnRow({
             >
               <Icon.SkipForward size={18} />
             </button>
-            <Button
-              size="lg"
-              onClick={onComplete}
-              disabled={pending}
-              aria-label={
-                mine
-                  ? `Mark ${turn.chore.name} done`
-                  : `Mark ${turn.chore.name} done for ${turn.assignee.full_name.split(' ')[0]}`
-              }
-            >
-              <Icon.Check size={18} />
-              {mine ? 'Done' : `For ${turn.assignee.full_name.split(' ')[0]}`}
-            </Button>
           </>
+        )}
+        {canComplete && (
+          <Button
+            size="lg"
+            onClick={onComplete}
+            disabled={pending}
+            aria-label={
+              mine
+                ? `Mark ${turn.chore.name} done`
+                : `Mark ${turn.chore.name} done for ${turn.assignee.full_name.split(' ')[0]}`
+            }
+          >
+            <Icon.Check size={18} />
+            {mine ? 'Done' : `For ${turn.assignee.full_name.split(' ')[0]}`}
+          </Button>
         )}
       </div>
 

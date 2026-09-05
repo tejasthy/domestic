@@ -73,6 +73,10 @@ export type Chore = {
   lookahead_days: number;
   sort_order: number;
   is_active: boolean;
+  /** Per-chore override, on top of the household's own get_ahead module
+   * toggle — both must allow it. */
+  allow_get_ahead: boolean;
+  allow_defer: boolean;
   created_at: string;
 };
 
@@ -300,6 +304,7 @@ type Defaulted =
   | 'notify_push' | 'notify_email' | 'quiet_from' | 'quiet_to' | 'timezone'
   | 'emoji' | 'days_of_week' | 'interval_weeks' | 'anchor_date' | 'due_hour'
   | 'queue_depth' | 'lookahead_days' | 'sort_order' | 'is_active' | 'status'
+  | 'allow_get_ahead' | 'allow_defer'
   | 'spent_on' | 'settled_on' | 'split_kind' | 'category' | 'method'
   | 'metadata' | 'turn_number' | 'position' | 'interval_months' | 'next_run_on'
   | 'allow_member_cross_complete' | 'expires_at' | 'starts_at'
@@ -504,6 +509,8 @@ export type Database = {
           p_queue_depth?: number;
           p_lookahead_days?: number;
           p_profile_ids?: string[];
+          p_allow_get_ahead?: boolean;
+          p_allow_defer?: boolean;
         };
         Returns: Chore;
       };
@@ -520,6 +527,8 @@ export type Database = {
           p_queue_depth?: number | null;
           p_lookahead_days?: number | null;
           p_sort_order?: number | null;
+          p_allow_get_ahead?: boolean | null;
+          p_allow_defer?: boolean | null;
         };
         Returns: Chore;
       };
@@ -654,6 +663,7 @@ export type TurnCard = ChoreTurn & {
   chore: Pick<
     Chore,
     'id' | 'name' | 'emoji' | 'cadence' | 'description' | 'days_of_week' | 'interval_weeks'
+    | 'allow_get_ahead' | 'allow_defer'
   >;
   assignee: Pick<Profile, 'id' | 'full_name' | 'initials' | 'color'>;
 };

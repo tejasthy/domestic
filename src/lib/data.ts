@@ -12,7 +12,7 @@ const TURN_SELECT = `
   id, chore_id, household_id, turn_number, assignee_id, status,
   due_at, completed_at, completed_by, note, created_at, flagged_at,
   completion_distance_m, completion_within_geofence,
-  chore:chores!inner ( id, name, emoji, cadence, description, days_of_week, interval_weeks ),
+  chore:chores!inner ( id, name, emoji, cadence, description, days_of_week, interval_weeks, allow_get_ahead, allow_defer ),
   assignee:profiles!chore_turns_assignee_id_fkey ( id, full_name, initials, color )
 `;
 
