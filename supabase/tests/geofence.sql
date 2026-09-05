@@ -22,34 +22,49 @@ select top_up_queue('3c4c3c4c-1111-1111-1111-111111111111');
 
 select set_config('request.user_id', '3c4c3c4c-0000-0000-0000-000000000001', false);
 
--- Cannot enable without a household location set.
+-- Cannot enable without any house coordinates on file (no address, no
+-- kiosk-override location, no already-geocoded house_latitude/longitude).
 do $$
 begin
   begin
     perform set_geofence(true);
-    raise exception 'FAIL: set_geofence should refuse to enable without a household location';
+    raise exception 'FAIL: set_geofence should refuse to enable without a house location';
   exception when others then
-    if sqlerrm not like '%set a household location first%' then raise; end if;
+    if sqlerrm not like '%set a house address first%' then raise; end if;
   end;
 end $$;
-\echo '  ok  set_geofence refuses to enable without a household location'
+\echo '  ok  set_geofence refuses to enable without a house location'
 
--- Ann Arbor, MI, roughly — the exact coordinates don't matter, only the
--- relative distances used below.
-update households set latitude = 42.2808, longitude = -83.7430
- where id = '3c4c3c4c-3c4c-3c4c-3c4c-3c4c3c4c3c4c';
-
+-- The app layer geocodes households.address and passes it through as
+-- p_lat/p_lon (Postgres can't call the geocoder itself) — simulate that
+-- here directly. Ann Arbor, MI, roughly; the exact coordinates don't matter,
+-- only the relative distances used below.
 do $$
 begin
-  perform set_geofence(true, 150);
+  perform set_geofence(true, 150, 42.2808, -83.7430);
   if not (select geofence_enabled from households where id = '3c4c3c4c-3c4c-3c4c-3c4c-3c4c3c4c3c4c') then
     raise exception 'FAIL: set_geofence(true) should turn geofencing on';
   end if;
   if (select geofence_radius_meters from households where id = '3c4c3c4c-3c4c-3c4c-3c4c-3c4c3c4c3c4c') <> 150 then
     raise exception 'FAIL: set_geofence should save the radius';
   end if;
+  if (select house_latitude from households where id = '3c4c3c4c-3c4c-3c4c-3c4c-3c4c3c4c3c4c') is distinct from 42.2808 then
+    raise exception 'FAIL: set_geofence should persist the geocoded house coordinates';
+  end if;
 end $$;
-\echo '  ok  set_geofence enables once a location exists and saves the radius'
+\echo '  ok  set_geofence enables once coordinates are supplied and saves the radius'
+
+-- Re-enabling without new coordinates keeps the ones already on file —
+-- the app only re-geocodes when house_latitude/house_longitude are null.
+do $$
+begin
+  perform set_geofence(false);
+  perform set_geofence(true, 150);
+  if (select house_latitude from households where id = '3c4c3c4c-3c4c-3c4c-3c4c-3c4c3c4c3c4c') is distinct from 42.2808 then
+    raise exception 'FAIL: set_geofence should keep previously-geocoded coordinates when none are passed';
+  end if;
+end $$;
+\echo '  ok  set_geofence keeps existing house coordinates across a disable/re-enable'
 
 -- Completing from right at the house succeeds and records the audit fields.
 do $$

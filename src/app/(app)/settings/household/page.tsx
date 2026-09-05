@@ -143,7 +143,11 @@ export default async function HouseholdSettingsPage() {
           <GeofenceToggle
             enabled={household.geofence_enabled}
             radiusMeters={household.geofence_radius_meters}
-            hasLocation={household.latitude != null && household.longitude != null}
+            hasLocation={
+              !!household.address ||
+              (household.house_latitude != null && household.house_longitude != null) ||
+              (household.latitude != null && household.longitude != null)
+            }
           />
         </div>
       </section>

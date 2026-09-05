@@ -520,8 +520,8 @@ export function GeofenceToggle({
           <span className="t-title-md text-ink block">Require members to be nearby</span>
           <span className="t-body-sm text-ink-muted block mt-0.5">
             {hasLocation
-              ? "Completing a chore from a phone requires being within range of the house. The kiosk is exempt — it's fixed at home."
-              : 'Set a household location above first.'}
+              ? "Completing a chore from a phone requires being within range of the house address. The kiosk is exempt — it's fixed at home."
+              : "This house has no address or location on file yet, so there's nothing to measure distance from."}
           </span>
         </span>
         <span

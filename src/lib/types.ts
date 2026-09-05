@@ -20,6 +20,8 @@ export type Household = {
   location_label: string | null;
   latitude: number | null;
   longitude: number | null;
+  house_latitude: number | null;
+  house_longitude: number | null;
   geofence_enabled: boolean;
   geofence_radius_meters: number;
   signup_source: string | null;
@@ -378,7 +380,12 @@ export type Database = {
         Returns: number;
       };
       set_geofence: {
-        Args: { p_enabled: boolean; p_radius_meters?: number | null };
+        Args: {
+          p_enabled: boolean;
+          p_radius_meters?: number | null;
+          p_lat?: number | null;
+          p_lon?: number | null;
+        };
         Returns: undefined;
       };
       accept_swap: { Args: { p_swap: string }; Returns: undefined };

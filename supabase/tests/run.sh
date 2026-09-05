@@ -68,6 +68,8 @@ echo "  ok  pgcrypto in extensions + app role created (as in Supabase)"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0028_standing_chore_flag.sql" && echo "  ok  0028_standing_chore_flag.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0029_swap_get_ahead_defer.sql" && echo "  ok  0029_swap_get_ahead_defer.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0030_platform_admin_table.sql" && echo "  ok  0030_platform_admin_table.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0031_geofence_house_address.sql" && echo "  ok  0031_geofence_house_address.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0032_credit_assignee_in_activity_log.sql" && echo "  ok  0032_credit_assignee_in_activity_log.sql"
 
 # Only the auth-schema grants are left to do; everything in `public` came from
 # the default privileges set above, so 0004's column-level revoke still stands.
@@ -118,6 +120,7 @@ echo "── standing chores, flags, get-ahead/defer, geofence, platform admin �
 "${PSQL[@]}" < "$HERE/get_ahead_and_defer.sql"
 "${PSQL[@]}" < "$HERE/geofence.sql"
 "${PSQL[@]}" < "$HERE/platform_admin.sql"
+"${PSQL[@]}" < "$HERE/credit_assignee.sql"
 
 echo
 echo "All database checks passed."

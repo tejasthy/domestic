@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
-import { geocodeLocation } from '@/lib/weather';
+import { geocodeLocation, geocodeHouseAddress } from '@/lib/weather';
 import type { ActionResult } from '@/lib/actions';
 import type { HouseholdInvite } from '@/lib/types';
 
@@ -191,9 +191,43 @@ export async function setGetAheadSettings(input: GetAheadSettingsInput): Promise
 
 export async function setGeofence(enabled: boolean, radiusMeters?: number): Promise<ActionResult> {
   const supabase = await createClient();
+
+  // The geofence centers on the house's own address, not the kiosk's
+  // optional weather-location override, so an admin doesn't have to
+  // configure that override just to turn this on. Geocode the address here
+  // so set_geofence has fresh coordinates to persist — only needed the first
+  // time it's turned on. Falls back to the kiosk override's coordinates for
+  // a household with no address on file, since that's the only location it
+  // has.
+  let lat: number | null = null;
+  let lon: number | null = null;
+  if (enabled) {
+    const { data: hh } = await supabase
+      .from('households')
+      .select('address, house_latitude, house_longitude, latitude, longitude')
+      .single();
+    if (hh?.house_latitude == null || hh?.house_longitude == null) {
+      if (hh?.address) {
+        const place = await geocodeHouseAddress(hh.address);
+        if (!place) {
+          return { ok: false, error: "Couldn't locate the house address on file — double-check it's correct." };
+        }
+        lat = place.lat;
+        lon = place.lon;
+      } else if (hh?.latitude != null && hh?.longitude != null) {
+        lat = hh.latitude;
+        lon = hh.longitude;
+      } else {
+        return { ok: false, error: 'Set a house address, or a location above, first.' };
+      }
+    }
+  }
+
   const { error } = await supabase.rpc('set_geofence', {
     p_enabled: enabled,
     p_radius_meters: radiusMeters ?? null,
+    p_lat: lat,
+    p_lon: lon,
   });
   if (error) return fail(error, 'Could not change that.');
   revalidatePath('/settings/household');
