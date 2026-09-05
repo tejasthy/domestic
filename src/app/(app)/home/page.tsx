@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { getSession, getChores, getOpenTurns, getUpNext, getBalances, getKioskMessages } from '@/lib/data';
+import { getSession, getChores, getOpenTurns, getUpNext, getBalances, getKioskMessages, getGetAheadSettings } from '@/lib/data';
 import { TurnRow, FlagButton, SwapRequestRow } from '@/components/turn-card';
 import { KioskNote } from '@/components/kiosk-note';
 import { Card, EmptyState, SectionHeader, Initials } from '@/components/ui';
@@ -27,12 +27,13 @@ export default async function TodayPage() {
   const showKiosk = modules.includes('kiosk');
 
   const supabase = await createClient();
-  const [chores, turns, upNext, balances, kioskMessages, { data: swaps }] = await Promise.all([
+  const [chores, turns, upNext, balances, kioskMessages, getAheadSettings, { data: swaps }] = await Promise.all([
     showChores ? getChores() : Promise.resolve([]),
     showChores ? getOpenTurns() : Promise.resolve([]),
     showChores ? getUpNext() : Promise.resolve([]),
     showMoney ? getBalances() : Promise.resolve<Record<string, number>>({}),
     showKiosk ? getKioskMessages() : Promise.resolve([]),
+    showChores ? getGetAheadSettings(household.id) : Promise.resolve(null),
     supabase
       .from('chore_swaps')
       .select(`
@@ -48,11 +49,16 @@ export default async function TodayPage() {
 
   // Only a turn with a real due date is actually "up" — an on-demand chore's
   // queued-but-unflagged turns (due_at null, bucket 'anytime') are just
-  // holding a place in line, not yet needed.
+  // holding a place in line, not yet needed. Standing chores are the
+  // exception: they have no due date at all and are always "up" for whoever
+  // currently holds them.
   const mine = turns.filter((t) => t.assignee_id === me.id);
-  const mineNow = mine.filter((t) => ['overdue', 'today'].includes(bucketFor(t.due_at, household.timezone)));
+  const mineNow = mine.filter(
+    (t) => t.chore.cadence === 'standing' || ['overdue', 'today'].includes(bucketFor(t.due_at, household.timezone)),
+  );
   const mineLater = mine.filter((t) => !mineNow.includes(t));
   const theirs = turns.filter((t) => t.assignee_id !== me.id);
+  const getAheadEnabled = getAheadSettings?.enabled ?? true;
 
   const onDemand = chores.filter((c) => c.cadence === 'on_demand');
   const upNextByChore = new Map(upNext.map((t) => [t.chore_id, t]));
@@ -104,7 +110,7 @@ export default async function TodayPage() {
         ) : (
           <div className="space-y-3">
             {mineNow.map((t) => (
-              <TurnRow key={t.id} turn={t} mine crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} />
+              <TurnRow key={t.id} turn={t} mine crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} members={members} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
             ))}
           </div>
         )}
@@ -140,7 +146,7 @@ export default async function TodayPage() {
           />
           <div className="space-y-3">
             {theirs.slice(0, 6).map((t) => (
-              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} />
+              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} members={members} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
             ))}
           </div>
         </section>
@@ -151,7 +157,7 @@ export default async function TodayPage() {
           <SectionHeader title="Coming up for you" />
           <div className="space-y-3">
             {mineLater.map((t) => (
-              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} />
+              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} members={members} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
             ))}
           </div>
         </section>

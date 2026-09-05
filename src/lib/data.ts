@@ -11,8 +11,12 @@ import { DEFAULT_MODULES, type ModuleKey } from '@/lib/modules';
 const TURN_SELECT = `
   id, chore_id, household_id, turn_number, assignee_id, status,
   due_at, completed_at, completed_by, note, created_at,
+  flagged_for, flagged_by, flagged_at, flag_note,
+  completion_distance_m, completion_within_geofence,
   chore:chores!inner ( id, name, emoji, cadence, description, days_of_week, interval_weeks ),
-  assignee:profiles!chore_turns_assignee_id_fkey ( id, full_name, initials, color )
+  assignee:profiles!chore_turns_assignee_id_fkey ( id, full_name, initials, color ),
+  flagger:profiles!chore_turns_flagged_by_fkey ( id, full_name, initials, color ),
+  flagged:profiles!chore_turns_flagged_for_fkey ( id, full_name, initials, color )
 `;
 
 /** Current user's profile plus everyone they live with. Cached per request. */
@@ -277,6 +281,52 @@ export async function getInvites(): Promise<HouseholdInvite[]> {
   return data ?? [];
 }
 
+export type GetAheadSettings = {
+  enabled: boolean;
+  getAhead: { maxAhead: number; maxPer30d: number };
+  defer: { maxAhead: number; maxPer30d: number };
+};
+
+const GET_AHEAD_DEFAULTS: GetAheadSettings = {
+  enabled: true,
+  getAhead: { maxAhead: 2, maxPer30d: 1 },
+  defer: { maxAhead: 2, maxPer30d: 1 },
+};
+
+/**
+ * No row for this household means the feature is on with the defaults — the
+ * same fallback get_ahead()/defer_turn() apply server-side, kept in sync here
+ * so the settings screen and button-disabled states agree with the RPCs.
+ */
+export async function getGetAheadSettings(householdId: string): Promise<GetAheadSettings> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('household_modules')
+    .select('enabled, settings')
+    .eq('household_id', householdId)
+    .eq('module', 'get_ahead')
+    .maybeSingle<{ enabled: boolean; settings: Record<string, unknown> }>();
+
+  if (!data) return GET_AHEAD_DEFAULTS;
+
+  const settings = (data.settings ?? {}) as {
+    get_ahead?: { max_ahead?: number; max_per_30d?: number };
+    defer?: { max_ahead?: number; max_per_30d?: number };
+  };
+
+  return {
+    enabled: data.enabled ?? true,
+    getAhead: {
+      maxAhead: settings.get_ahead?.max_ahead ?? GET_AHEAD_DEFAULTS.getAhead.maxAhead,
+      maxPer30d: settings.get_ahead?.max_per_30d ?? GET_AHEAD_DEFAULTS.getAhead.maxPer30d,
+    },
+    defer: {
+      maxAhead: settings.defer?.max_ahead ?? GET_AHEAD_DEFAULTS.defer.maxAhead,
+      maxPer30d: settings.defer?.max_per_30d ?? GET_AHEAD_DEFAULTS.defer.maxPer30d,
+    },
+  };
+}
+
 export async function getKioskDevices() {
   const supabase = await createClient();
   const { data } = await supabase
@@ -292,6 +342,34 @@ export async function getKioskDevices() {
  * that household — notFound() rather than an empty screen, so nothing leaks
  * about a component they chose not to run.
  */
+/* ------------------------------------------------------------ platform admin */
+
+/**
+ * Every function here is gated by is_platform_admin() inside the RPC itself
+ * (see supabase/migrations/0025 + 0027) — that's the real authorization
+ * boundary. The route-level gate in src/app/platform-admin/layout.tsx only
+ * controls whether the page exists; a non-admin calling these directly still
+ * gets refused by Postgres.
+ */
+export async function getPlatformStats() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('platform_stats');
+  if (error) return null;
+  return (Array.isArray(data) ? data[0] : data) ?? null;
+}
+
+export async function getPlatformHouseholdsSummary(limit = 200) {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc('platform_households_summary', { p_limit: limit });
+  return data ?? [];
+}
+
+export async function getPlatformFeedback(limit = 100) {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc('platform_feedback', { p_limit: limit });
+  return data ?? [];
+}
+
 export async function requireModule(key: ModuleKey) {
   const session = await getSession();
   if (!session?.me || !session.household) redirect('/login');

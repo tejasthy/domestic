@@ -3,8 +3,8 @@
 import { useState, useTransition } from 'react';
 import {
   clearAiConfig, createInvite, createKioskDevice, removeMember,
-  revokeInvite, setAiConfig, setCrossComplete, setHouseholdLocation,
-  setMemberAdmin, setModule,
+  revokeInvite, setAiConfig, setCrossComplete, setGeofence, setGetAheadSettings,
+  setHouseholdLocation, setMemberAdmin, setModule, type GetAheadSettingsInput,
 } from '@/lib/household-actions';
 import { Button, Card, Field, Initials, Input, Pill, Select, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
@@ -474,6 +474,187 @@ export function CrossCompleteToggle({ enabled }: { enabled: boolean }) {
   );
 }
 
+/* --------------------------------------------------------------- geofence */
+
+export function GeofenceToggle({
+  enabled,
+  radiusMeters,
+  hasLocation,
+}: {
+  enabled: boolean;
+  radiusMeters: number;
+  hasLocation: boolean;
+}) {
+  const [pending, start] = useTransition();
+  const [on, setOn] = useState(enabled);
+  const [radius, setRadius] = useState(radiusMeters);
+  const [error, setError] = useState<string | null>(null);
+
+  function save(nextOn: boolean, nextRadius: number) {
+    setError(null);
+    start(async () => {
+      const res = await setGeofence(nextOn, nextRadius);
+      if (!res.ok) {
+        setOn(enabled);
+        setRadius(radiusMeters);
+        setError(res.error);
+      }
+    });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        disabled={pending || !hasLocation}
+        onClick={() => {
+          const next = !on;
+          setOn(next);
+          save(next, radius);
+        }}
+        className="w-full flex items-start gap-3 px-4 py-3.5 text-left rounded-lg border border-line bg-card hover:bg-hover transition-colors duration-[120ms] disabled:opacity-50"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="t-title-md text-ink block">Require members to be nearby</span>
+          <span className="t-body-sm text-ink-muted block mt-0.5">
+            {hasLocation
+              ? "Completing a chore from a phone requires being within range of the house. The kiosk is exempt — it's fixed at home."
+              : 'Set a household location above first.'}
+          </span>
+        </span>
+        <span
+          className={cx(
+            'w-11 h-6 rounded-pill shrink-0 mt-0.5 relative transition-colors duration-[180ms]',
+            on ? 'bg-blue dark:bg-maize' : 'bg-line',
+          )}
+          aria-hidden
+        >
+          <span
+            className={cx(
+              'absolute top-0.5 w-5 h-5 rounded-pill bg-white shadow-xs',
+              'transition-[left] duration-[180ms]',
+              on ? 'left-[22px]' : 'left-0.5',
+            )}
+          />
+        </span>
+      </button>
+      {on && (
+        <Field label="Radius (meters)" className="mt-3">
+          <Input
+            type="number"
+            min={20}
+            max={2000}
+            step={10}
+            value={radius}
+            disabled={pending}
+            onChange={(e) => setRadius(Number(e.target.value))}
+            onBlur={() => save(on, radius)}
+          />
+        </Field>
+      )}
+      {error && <p className="t-body-sm text-danger mt-2">{error}</p>}
+    </>
+  );
+}
+
+/* ---------------------------------------------------- get ahead & defer */
+
+export function GetAheadSettings({ initial }: { initial: GetAheadSettingsInput }) {
+  const [pending, start] = useTransition();
+  const [settings, setSettings] = useState(initial);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function set(patch: Partial<GetAheadSettingsInput>) {
+    setSaved(false);
+    setSettings((prev) => ({ ...prev, ...patch }));
+  }
+
+  return (
+    <Card className="p-4 space-y-4">
+      <label className="flex items-center justify-between gap-3">
+        <span className="t-body-md text-ink">Let people get ahead or defer a turn</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={settings.enabled}
+          onClick={() => set({ enabled: !settings.enabled })}
+          className={cx(
+            'w-11 h-6 rounded-pill shrink-0 relative transition-colors duration-[180ms]',
+            settings.enabled ? 'bg-blue dark:bg-maize' : 'bg-line',
+          )}
+        >
+          <span
+            className={cx(
+              'absolute top-0.5 w-5 h-5 rounded-pill bg-white shadow-xs',
+              'transition-[left] duration-[180ms]',
+              settings.enabled ? 'left-[22px]' : 'left-0.5',
+            )}
+          />
+        </button>
+      </label>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Turns ahead" hint="Max turns done early at once.">
+          <Input
+            type="number"
+            min={1}
+            max={10}
+            value={settings.getAhead.maxAhead}
+            onChange={(e) => set({ getAhead: { ...settings.getAhead, maxAhead: Number(e.target.value) } })}
+          />
+        </Field>
+        <Field label="Uses / 30 days" hint="How often it can be used.">
+          <Input
+            type="number"
+            min={1}
+            max={30}
+            value={settings.getAhead.maxPer30d}
+            onChange={(e) => set({ getAhead: { ...settings.getAhead, maxPer30d: Number(e.target.value) } })}
+          />
+        </Field>
+        <Field label="Defers per turn" hint="Max times one turn is pushed.">
+          <Input
+            type="number"
+            min={1}
+            max={10}
+            value={settings.defer.maxAhead}
+            onChange={(e) => set({ defer: { ...settings.defer, maxAhead: Number(e.target.value) } })}
+          />
+        </Field>
+        <Field label="Uses / 30 days" hint="How often it can be used.">
+          <Input
+            type="number"
+            min={1}
+            max={30}
+            value={settings.defer.maxPer30d}
+            onChange={(e) => set({ defer: { ...settings.defer, maxPer30d: Number(e.target.value) } })}
+          />
+        </Field>
+      </div>
+
+      {error && <p className="t-body-sm text-danger">{error}</p>}
+
+      <Button
+        size="md"
+        disabled={pending}
+        onClick={() => {
+          setError(null);
+          start(async () => {
+            const res = await setGetAheadSettings(settings);
+            if (res.ok) setSaved(true);
+            else setError(res.error);
+          });
+        }}
+      >
+        {pending ? 'Saving…' : saved ? 'Saved' : 'Save'}
+      </Button>
+    </Card>
+  );
+}
+
 /* -------------------------------------------------------------------- kiosk */
 
 export function LocationSetting({ label, address }: { label: string | null; address: string | null }) {
@@ -494,7 +675,7 @@ export function LocationSetting({ label, address }: { label: string | null; addr
         hint={
           address
             ? 'Only needed if the kiosk should show weather for somewhere other than the house.'
-            : 'Used for the kiosk weather widget.'
+            : 'Used for the kiosk weather widget, and as the center point if you turn on the nearby-completion requirement below.'
         }
       >
         <Input

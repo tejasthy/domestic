@@ -21,6 +21,10 @@ const NewHousehold = z.object({
   full_name: z.string().min(1, 'What should everyone call you?').max(80),
   initials: z.string().min(1).max(3),
   modules: z.array(z.string()).min(1, 'Pick at least one thing to track.'),
+  /** Honest, minimal "join source" — captured only at household creation,
+   * from an optional `?ref=` onboarding query param. No IP/user-agent
+   * tracking anywhere in this app. */
+  signup_source: z.string().max(40).regex(/^[a-z0-9_-]+$/).optional(),
 });
 
 export async function createHousehold(
@@ -39,6 +43,7 @@ export async function createHousehold(
     p_full_name: parsed.data.full_name,
     p_initials: parsed.data.initials.toUpperCase(),
     p_modules: parsed.data.modules,
+    p_signup_source: parsed.data.signup_source || null,
   });
 
   if (error) return fail(error, 'Could not create the household.');
@@ -155,6 +160,43 @@ export async function setCrossComplete(enabled: boolean): Promise<ActionResult> 
   const supabase = await createClient();
   const { error } = await supabase.rpc('set_cross_complete', { p_enabled: enabled });
   if (error) return fail(error, 'Could not change that.');
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+/* ------------------------------------------------------- admin: get ahead/defer */
+
+export type GetAheadSettingsInput = {
+  enabled: boolean;
+  getAhead: { maxAhead: number; maxPer30d: number };
+  defer: { maxAhead: number; maxPer30d: number };
+};
+
+export async function setGetAheadSettings(input: GetAheadSettingsInput): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('set_module', {
+    p_module: 'get_ahead',
+    p_enabled: input.enabled,
+    p_settings: {
+      get_ahead: { max_ahead: input.getAhead.maxAhead, max_per_30d: input.getAhead.maxPer30d },
+      defer: { max_ahead: input.defer.maxAhead, max_per_30d: input.defer.maxPer30d },
+    },
+  });
+  if (error) return fail(error, 'Could not save those limits.');
+  revalidatePath('/settings/household');
+  return { ok: true };
+}
+
+/* ------------------------------------------------------------- admin: geofence */
+
+export async function setGeofence(enabled: boolean, radiusMeters?: number): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('set_geofence', {
+    p_enabled: enabled,
+    p_radius_meters: radiusMeters ?? null,
+  });
+  if (error) return fail(error, 'Could not change that.');
+  revalidatePath('/settings/household');
   revalidatePath('/', 'layout');
   return { ok: true };
 }

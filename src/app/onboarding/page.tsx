@@ -9,9 +9,9 @@ export const dynamic = 'force-dynamic';
 export default async function OnboardingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ code?: string }>;
+  searchParams: Promise<{ code?: string; ref?: string }>;
 }) {
-  const { code } = await searchParams;
+  const { code, ref } = await searchParams;
   const session = await getSession();
   // proxy.ts already sends an unauthenticated visitor to /login with this
   // exact URL (query string included) as `next`; this is just the fallback.
@@ -34,6 +34,7 @@ export default async function OnboardingPage({
         <Onboarding
           suggestedName={session.me.full_name}
           initialCode={code ?? null}
+          signupSource={ref ?? null}
           modules={MODULES.map((m) => ({
             key: m.key,
             name: m.name,

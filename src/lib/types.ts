@@ -1,7 +1,7 @@
 // Hand-written to match supabase/migrations. Once the project is live you can
 // regenerate with:  npx supabase gen types typescript --project-id <id>
 
-export type ChoreCadence = 'scheduled' | 'on_demand';
+export type ChoreCadence = 'scheduled' | 'on_demand' | 'standing';
 export type TurnStatus = 'pending' | 'done' | 'skipped' | 'missed';
 export type SplitKind = 'equal' | 'exact' | 'shares' | 'percent' | 'adjustment';
 /** expenses.split_kind only — means "derive the split from expense_items". */
@@ -20,6 +20,9 @@ export type Household = {
   location_label: string | null;
   latitude: number | null;
   longitude: number | null;
+  geofence_enabled: boolean;
+  geofence_radius_meters: number;
+  signup_source: string | null;
   created_at: string;
 };
 
@@ -88,6 +91,23 @@ export type ChoreTurn = {
   completed_at: string | null;
   completed_by: string | null;
   note: string | null;
+  created_at: string;
+  flagged_for: string | null;
+  flagged_by: string | null;
+  flagged_at: string | null;
+  flag_note: string | null;
+  completion_distance_m: number | null;
+  completion_within_geofence: boolean | null;
+};
+
+export type ChoreAdvanceKind = 'get_ahead' | 'defer';
+
+export type ChoreAdvanceLog = {
+  id: string;
+  chore_id: string;
+  profile_id: string;
+  kind: ChoreAdvanceKind;
+  turn_id: string;
   created_at: string;
 };
 
@@ -279,7 +299,8 @@ type Defaulted =
   | 'queue_depth' | 'lookahead_days' | 'sort_order' | 'is_active' | 'status'
   | 'spent_on' | 'settled_on' | 'split_kind' | 'category' | 'method'
   | 'metadata' | 'turn_number' | 'position' | 'interval_months' | 'next_run_on'
-  | 'allow_member_cross_complete' | 'expires_at' | 'starts_at';
+  | 'allow_member_cross_complete' | 'expires_at' | 'starts_at'
+  | 'geofence_enabled' | 'geofence_radius_meters';
 
 /** Nullable columns are optional on insert too — Postgres fills them with NULL. */
 type NullableKeys<Row> = {
@@ -320,6 +341,7 @@ export type Database = {
       kiosk_messages: Table<KioskMessage>;
       activity_log: Table<ActivityEntry>;
       member_away: Table<MemberAwayRow>;
+      chore_advance_log: Table<ChoreAdvanceLog>;
     };
     Views: {
       v_balances: View<Balance>;
@@ -336,12 +358,83 @@ export type Database = {
       append_turn: { Args: { p_chore: string; p_due?: string | null }; Returns: ChoreTurn };
       top_up_queue: { Args: { p_chore: string }; Returns: number };
       materialize_schedule: { Args: { p_chore: string }; Returns: number };
-      complete_turn: { Args: { p_turn: string; p_note?: string | null }; Returns: ChoreTurn };
+      complete_turn: {
+        Args: {
+          p_turn: string;
+          p_note?: string | null;
+          p_lat?: number | null;
+          p_lon?: number | null;
+        };
+        Returns: ChoreTurn;
+      };
       skip_turn: { Args: { p_turn: string; p_note?: string | null }; Returns: ChoreTurn };
       undo_turn: { Args: { p_turn: string }; Returns: ChoreTurn };
       flag_on_demand: { Args: { p_chore: string }; Returns: ChoreTurn };
+      flag_turn: {
+        Args: { p_turn: string; p_target: string; p_message?: string | null };
+        Returns: ChoreTurn;
+      };
+      clear_flag: { Args: { p_turn: string }; Returns: ChoreTurn };
+      get_ahead: { Args: { p_chore: string }; Returns: ChoreTurn };
+      defer_turn: { Args: { p_turn: string }; Returns: ChoreTurn };
+      haversine_meters: {
+        Args: { lat1: number; lon1: number; lat2: number; lon2: number };
+        Returns: number;
+      };
+      set_geofence: {
+        Args: { p_enabled: boolean; p_radius_meters?: number | null };
+        Returns: undefined;
+      };
       accept_swap: { Args: { p_swap: string }; Returns: undefined };
       is_household_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
+      is_platform_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
+      submit_feedback: {
+        Args: { p_kind: string; p_body: string; p_metadata?: Record<string, unknown> | null };
+        Returns: string;
+      };
+      platform_stats: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          households_total: number;
+          households_last_30d: number;
+          members_total: number;
+          members_last_30d: number;
+          admins_total: number;
+          module_enabled_counts: Record<string, number>;
+          turns_completed_last_7d: number;
+          turns_completed_last_30d: number;
+          turns_skipped_last_30d: number;
+          cross_complete_enabled_count: number;
+          geofence_enabled_count: number;
+          signup_source_counts: Record<string, number>;
+          feedback_total: number;
+          feedback_last_30d: number;
+        }[];
+      };
+      platform_households_summary: {
+        Args: { p_limit?: number };
+        Returns: {
+          id: string;
+          created_at: string;
+          member_count: number;
+          modules_enabled: string[];
+          allow_member_cross_complete: boolean;
+          geofence_enabled: boolean;
+          signup_source: string | null;
+        }[];
+      };
+      platform_feedback: {
+        Args: { p_limit?: number };
+        Returns: {
+          id: string;
+          household_name: string | null;
+          submitter_name: string | null;
+          kind: string;
+          body: string;
+          metadata: Record<string, unknown>;
+          created_at: string;
+        }[];
+      };
       create_household: {
         Args: {
           p_name: string;
@@ -350,6 +443,7 @@ export type Database = {
           p_full_name?: string | null;
           p_initials?: string | null;
           p_modules?: string[] | null;
+          p_signup_source?: string | null;
         };
         Returns: string;
       };
@@ -559,4 +653,6 @@ export type TurnCard = ChoreTurn & {
     'id' | 'name' | 'emoji' | 'cadence' | 'description' | 'days_of_week' | 'interval_weeks'
   >;
   assignee: Pick<Profile, 'id' | 'full_name' | 'initials' | 'color'>;
+  flagger: Pick<Profile, 'id' | 'full_name' | 'initials' | 'color'> | null;
+  flagged: Pick<Profile, 'id' | 'full_name' | 'initials' | 'color'> | null;
 };

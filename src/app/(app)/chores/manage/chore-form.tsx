@@ -71,7 +71,7 @@ export function ChoreForm(props: ChoreFormProps) {
       days_of_week: cadence === 'scheduled' ? daysOfWeek : [],
       interval_weeks: intervalWeeks,
       due_hour: dueHour,
-      queue_depth: queueDepth,
+      queue_depth: cadence === 'standing' ? 1 : queueDepth,
       lookahead_days: lookaheadDays,
       profile_ids: rotation,
     };
@@ -127,7 +127,7 @@ export function ChoreForm(props: ChoreFormProps) {
         <div>
           <span className="t-label text-ink-muted block mb-1.5">Cadence</span>
           <div className="flex gap-2">
-            {(['scheduled', 'on_demand'] as const).map((c) => {
+            {(['scheduled', 'on_demand', 'standing'] as const).map((c) => {
               const on = cadence === c;
               return (
                 <button
@@ -142,14 +142,19 @@ export function ChoreForm(props: ChoreFormProps) {
                       : 'border-subtle bg-card opacity-60 hover:opacity-100 text-ink-2',
                   )}
                 >
-                  {c === 'scheduled' ? 'Scheduled' : 'On demand'}
+                  {c === 'scheduled' ? 'Scheduled' : c === 'on_demand' ? 'On demand' : 'Standing'}
                 </button>
               );
             })}
           </div>
         </div>
 
-        {cadence === 'scheduled' ? (
+        {cadence === 'standing' ? (
+          <p className="t-body-sm text-ink-muted">
+            Whoever&rsquo;s up does it, then it instantly passes to the next
+            person. No due date, no queue — it&rsquo;s just always someone&rsquo;s job.
+          </p>
+        ) : cadence === 'scheduled' ? (
           <>
             <div>
               <span className="t-label text-ink-muted block mb-1.5">Days</span>

@@ -1,12 +1,12 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getSession, getInvites, getKioskDevices } from '@/lib/data';
+import { getSession, getInvites, getKioskDevices, getGetAheadSettings } from '@/lib/data';
 import { getAiConfigSummary } from '@/lib/household-actions';
 import { MODULES } from '@/lib/modules';
 import { Card, SectionHeader, Initials, Pill } from '@/components/ui';
 import {
   MemberRow, InviteList, NewInvite, ModuleToggles, CrossCompleteToggle,
-  LocationSetting, KioskDevices, AiConfig,
+  GeofenceToggle, GetAheadSettings, LocationSetting, KioskDevices, AiConfig,
 } from './admin';
 
 export const dynamic = 'force-dynamic';
@@ -49,10 +49,11 @@ export default async function HouseholdSettingsPage() {
     );
   }
 
-  const [invites, kiosks, aiConfig] = await Promise.all([
+  const [invites, kiosks, aiConfig, getAheadSettings] = await Promise.all([
     getInvites(),
     getKioskDevices(),
     getAiConfigSummary(),
+    getGetAheadSettings(household.id),
   ]);
   const openInvites = invites.filter(
     (i) =>
@@ -131,6 +132,23 @@ export default async function HouseholdSettingsPage() {
       </section>
 
       <section>
+        <SectionHeader title="Getting ahead & deferring" />
+        <GetAheadSettings initial={getAheadSettings} />
+      </section>
+
+      <section>
+        <SectionHeader title="Location" />
+        <div className="space-y-3">
+          <LocationSetting label={household.location_label} address={household.address} />
+          <GeofenceToggle
+            enabled={household.geofence_enabled}
+            radiusMeters={household.geofence_radius_meters}
+            hasLocation={household.latitude != null && household.longitude != null}
+          />
+        </div>
+      </section>
+
+      <section>
         <SectionHeader title="Receipt scanning" />
         <AiConfig summary={aiConfig} timeZone={household.timezone} />
       </section>
@@ -138,17 +156,14 @@ export default async function HouseholdSettingsPage() {
       {modules.includes('kiosk') && (
         <section>
           <SectionHeader title="Wall display" />
-          <div className="space-y-3">
-            <LocationSetting label={household.location_label} address={household.address} />
-            <KioskDevices
-              timeZone={household.timezone}
-              devices={kiosks.map((k) => ({
-                id: k.id,
-                name: k.name,
-                lastSeenAt: k.last_seen_at,
-              }))}
-            />
-          </div>
+          <KioskDevices
+            timeZone={household.timezone}
+            devices={kiosks.map((k) => ({
+              id: k.id,
+              name: k.name,
+              lastSeenAt: k.last_seen_at,
+            }))}
+          />
         </section>
       )}
     </div>

@@ -15,7 +15,7 @@ const ChoreInput = z.object({
   name: z.string().min(1, 'Give it a name.').max(80),
   emoji: z.string().min(1).max(8).default('🧹'),
   description: z.string().max(300).optional(),
-  cadence: z.enum(['scheduled', 'on_demand']),
+  cadence: z.enum(['scheduled', 'on_demand', 'standing']),
   days_of_week: z.array(z.number().int().min(0).max(6)).default([]),
   interval_weeks: z.number().int().min(1).max(52).default(1),
   due_hour: z.number().int().min(0).max(23).default(20),

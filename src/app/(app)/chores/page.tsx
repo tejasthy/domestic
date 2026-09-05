@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { getChores, getUpNext, getChoreStats, getRecentlyDone, requireModule } from '@/lib/data';
+import { getChores, getUpNext, getChoreStats, getRecentlyDone, requireModule, getGetAheadSettings } from '@/lib/data';
 import { TurnRow, RecentlyDoneRow } from '@/components/turn-card';
 import { Card, SectionHeader, Initials, Pill, cx } from '@/components/ui';
 import { describeCadence, upcomingRotation } from '@/lib/rotation';
@@ -14,11 +14,12 @@ export default async function ChoresPage() {
   const { me, members, household } = session;
 
   const supabase = await createClient();
-  const [chores, upNext, stats, recent, { data: rotations }] = await Promise.all([
+  const [chores, upNext, stats, recent, getAheadSettings, { data: rotations }] = await Promise.all([
     getChores(),
     getUpNext(),
     getChoreStats(),
     getRecentlyDone(12),
+    getGetAheadSettings(household.id),
     supabase
       .from('chore_rotation')
       .select('chore_id, profile_id, position')
@@ -75,8 +76,8 @@ export default async function ChoresPage() {
                       {describeCadence(chore)}
                     </p>
                   </div>
-                  <Pill tone={chore.cadence === 'on_demand' ? 'neutral' : 'info'}>
-                    {chore.cadence === 'on_demand' ? 'On demand' : 'Scheduled'}
+                  <Pill tone={chore.cadence === 'on_demand' ? 'neutral' : chore.cadence === 'standing' ? 'accent' : 'info'}>
+                    {chore.cadence === 'on_demand' ? 'On demand' : chore.cadence === 'standing' ? 'Standing' : 'Scheduled'}
                   </Pill>
                 </div>
 
@@ -111,6 +112,9 @@ export default async function ChoresPage() {
                     mine={turn.assignee_id === me.id}
                     timeZone={household.timezone}
                     className="border-0 shadow-none bg-transparent p-0"
+                    members={members}
+                    geofenceEnabled={household.geofence_enabled}
+                    getAheadEnabled={getAheadSettings.enabled}
                   />
                 </div>
               )}

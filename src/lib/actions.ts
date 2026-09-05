@@ -69,7 +69,11 @@ export async function signOut() {
 
 /* ------------------------------------------------------------------ chores */
 
-export async function completeTurn(turnId: string, note?: string): Promise<ActionResult> {
+export async function completeTurn(
+  turnId: string,
+  note?: string,
+  coords?: { lat: number; lon: number },
+): Promise<ActionResult> {
   const supabase = await createClient();
 
   const { data: turn } = await supabase
@@ -81,6 +85,8 @@ export async function completeTurn(turnId: string, note?: string): Promise<Actio
   const { error } = await supabase.rpc('complete_turn', {
     p_turn: turnId,
     p_note: note ?? null,
+    p_lat: coords?.lat ?? null,
+    p_lon: coords?.lon ?? null,
   });
   if (error) return { ok: false, error: error.message };
 
@@ -193,6 +199,69 @@ export async function undoTurn(turnId: string): Promise<ActionResult> {
   const { error } = await supabase.rpc('undo_turn', { p_turn: turnId });
   if (error) return { ok: false, error: error.message };
 
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+/** Completes your own next turn on this chore early, before it's due. Never
+ * touches anyone else's turn — see get_ahead() for the limits enforced. */
+export async function getAhead(choreId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('get_ahead', { p_chore: choreId });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+/** Pushes your own turn's due date to the next matching occurrence (or,
+ * for an on-demand turn, back to an un-due queue placeholder). */
+export async function deferTurn(turnId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('defer_turn', { p_turn: turnId });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+/** Points a visible nudge at a specific housemate — a reminder, not a
+ * reassignment; the rotation's actual assignee never changes. */
+export async function flagTurn(
+  turnId: string,
+  targetProfileId: string,
+  message?: string,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+
+  const { data: chore } = await supabase
+    .from('chore_turns')
+    .select('chore:chores(name, emoji)')
+    .eq('id', turnId)
+    .single<{ chore: { name: string; emoji: string } }>();
+
+  const { error } = await supabase.rpc('flag_turn', {
+    p_turn: turnId,
+    p_target: targetProfileId,
+    p_message: message ?? null,
+  });
+  if (error) return { ok: false, error: error.message };
+
+  if (chore) {
+    await notifyProfiles([targetProfileId], {
+      title: `${chore.chore.emoji} Someone flagged ${chore.chore.name} for you`,
+      body: message ?? 'Check your to-do list.',
+      url: '/home',
+      tag: `chore-flag-${turnId}`,
+    });
+  }
+
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+export async function clearFlag(turnId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('clear_flag', { p_turn: turnId });
+  if (error) return { ok: false, error: error.message };
   revalidatePath('/', 'layout');
   return { ok: true };
 }

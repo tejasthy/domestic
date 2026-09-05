@@ -7,7 +7,7 @@
 -- statement is idempotent, so running this again is a no-op — you do not need
 -- to track which migrations you have already applied.
 --
--- Contains: 0001_init.sql, 0002_logic.sql, 0003_invites_and_oauth.sql, 0004_multi_household.sql, 0005_modules.sql, 0006_devices.sql, 0007_intro.sql, 0008_pgcrypto_schema.sql, 0009_chore_admin.sql, 0010_recurring_expenses.sql, 0011_ai_config.sql, 0012_kiosk_interactivity.sql, 0013_split_adjustment.sql, 0014_expense_items.sql, 0015_lock_kiosk_rpcs_from_anon.sql, 0016_kiosk_dismiss_message.sql, 0017_update_expense.sql, 0018_skip_and_undo_turn.sql, 0019_kiosk_undo_turn.sql, 0020_away_and_pass_turn.sql
+-- Contains: 0001_init.sql, 0002_logic.sql, 0003_invites_and_oauth.sql, 0004_multi_household.sql, 0005_modules.sql, 0006_devices.sql, 0007_intro.sql, 0008_pgcrypto_schema.sql, 0009_chore_admin.sql, 0010_recurring_expenses.sql, 0011_ai_config.sql, 0012_kiosk_interactivity.sql, 0013_split_adjustment.sql, 0014_expense_items.sql, 0015_lock_kiosk_rpcs_from_anon.sql, 0016_kiosk_dismiss_message.sql, 0017_update_expense.sql, 0018_skip_and_undo_turn.sql, 0019_kiosk_undo_turn.sql, 0020_away_and_pass_turn.sql, 0021_standing_chores.sql, 0022_turn_flags.sql, 0023_get_ahead_and_defer.sql, 0024_geofence.sql, 0025_platform_admin_identity.sql, 0026_feedback.sql, 0027_platform_stats.sql
 
 /**************************************************************************
  * 0001_init.sql
@@ -3820,5 +3820,1399 @@ begin
   where p.id = coalesce(me, t.assignee_id) and nx.id = next_id;
 
   return t;
+end;
+$$;
+
+
+/**************************************************************************
+ * 0021_standing_chores.sql
+ *************************************************************************/
+
+-- A third cadence: `standing`. Some chores aren't naturally "on a schedule"
+-- or "a queue you flag when it's full" — they're just always somebody's job
+-- until they hand it off (take out recycling, restock TP). A standing chore
+-- has exactly one pending turn at a time, no due date, and is always visible
+-- in the to-do list without needing a flag. Completing it is an instant
+-- baton-pass: the next person's turn opens immediately.
+--
+-- This is implemented as on_demand's queue model with queue_depth pinned to
+-- 1 — no new turn-creation machinery, just top_up_queue generalized to know
+-- about it.
+--
+-- `alter type ... add value` must not run in the same transaction as its
+-- first use. This file has no explicit BEGIN, so each top-level statement
+-- here autocommits on its own (same as 0001's original enum creation), which
+-- is why the enum is extended first and used starting with the next
+-- statement.
+
+alter type chore_cadence add value if not exists 'standing';
+
+/* ---------------------------------------------------------- top_up_queue */
+
+-- on_demand keeps `queue_depth` turns pending; standing always wants exactly
+-- one (the "current" turn) and ignores queue_depth entirely; scheduled chores
+-- go through materialize_schedule instead, same as before.
+create or replace function top_up_queue(p_chore uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  cad      chore_cadence;
+  want     int;
+  have     int;
+  made     int := 0;
+  new_turn chore_turns;
+begin
+  select cadence into cad from chores where id = p_chore;
+
+  if cad = 'on_demand' then
+    select queue_depth into want from chores where id = p_chore;
+  elsif cad = 'standing' then
+    want := 1;
+  else
+    return 0;
+  end if;
+
+  select count(*) into have
+    from chore_turns where chore_id = p_chore and status = 'pending';
+
+  while have + made < want loop
+    new_turn := append_turn(p_chore, null);
+    exit when new_turn.id is null;
+    made := made + 1;
+  end loop;
+
+  return made;
+end;
+$$;
+
+/* ------------------------------------------------ cadence-branch fix-ups */
+
+-- complete_turn / kiosk_complete_turn / skip_turn all branched
+-- `if cadence = 'on_demand' then top_up_queue else materialize_schedule` —
+-- a standing chore fell into the `else` and hit materialize_schedule, which
+-- silently no-ops on anything but `scheduled` (its own guard). Net effect
+-- without this fix: a standing chore's queue would never refill past the
+-- first completion. Flip the branch so scheduled is the special case.
+
+create or replace function complete_turn(p_turn uuid, p_note text default null)
+returns chore_turns
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  t           chore_turns%rowtype;
+  c           chores%rowtype;
+  me          uuid := auth.uid();
+  allow_cross boolean;
+begin
+  select * into t from chore_turns where id = p_turn for update;
+  if not found then
+    raise exception 'turn not found';
+  end if;
+  if not is_household_member(t.household_id) then
+    raise exception 'not your household';
+  end if;
+  if t.status = 'done' then
+    return t;
+  end if;
+
+  if me is distinct from t.assignee_id then
+    select allow_member_cross_complete into allow_cross
+    from households where id = t.household_id;
+    if not coalesce(allow_cross, false) then
+      raise exception 'only the assigned member can complete this — an admin can let anyone complete anyone''s chores in Settings';
+    end if;
+  end if;
+
+  update chore_turns
+     set status = 'done', completed_at = now(), completed_by = coalesce(me, t.assignee_id), note = p_note
+   where id = p_turn
+  returning * into t;
+
+  select * into c from chores where id = t.chore_id;
+
+  if c.cadence = 'scheduled' then
+    perform materialize_schedule(t.chore_id);
+  else
+    perform top_up_queue(t.chore_id);
+  end if;
+
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  select t.household_id, coalesce(me, t.assignee_id), 'completed_chore',
+         p.full_name || ' did ' || c.name,
+         jsonb_build_object('chore_id', c.id, 'turn_id', t.id, 'emoji', c.emoji)
+  from profiles p where p.id = coalesce(me, t.assignee_id);
+
+  return t;
+end;
+$$;
+
+create or replace function kiosk_complete_turn(
+  p_household uuid,
+  p_turn      uuid,
+  p_profile   uuid,
+  p_note      text default null
+)
+returns chore_turns
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  t chore_turns%rowtype;
+  c chores%rowtype;
+begin
+  if not exists (select 1 from profiles where id = p_profile and household_id = p_household) then
+    raise exception 'not a member of this household';
+  end if;
+
+  select * into t from chore_turns where id = p_turn and household_id = p_household for update;
+  if not found then raise exception 'turn not found'; end if;
+  if t.status = 'done' then return t; end if;
+
+  update chore_turns
+     set status = 'done', completed_at = now(), completed_by = p_profile, note = p_note
+   where id = p_turn
+  returning * into t;
+
+  select * into c from chores where id = t.chore_id;
+
+  if c.cadence = 'scheduled' then
+    perform materialize_schedule(t.chore_id);
+  else
+    perform top_up_queue(t.chore_id);
+  end if;
+
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  select t.household_id, p_profile, 'completed_chore',
+         p.full_name || ' did ' || c.name,
+         jsonb_build_object('chore_id', c.id, 'turn_id', t.id, 'emoji', c.emoji)
+  from profiles p where p.id = p_profile;
+
+  return t;
+end;
+$$;
+
+create or replace function skip_turn(p_turn uuid, p_note text default null)
+returns chore_turns
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  t           chore_turns%rowtype;
+  c           chores%rowtype;
+  me          uuid := auth.uid();
+  allow_cross boolean;
+begin
+  select * into t from chore_turns where id = p_turn for update;
+  if not found then
+    raise exception 'turn not found';
+  end if;
+  if not is_household_member(t.household_id) then
+    raise exception 'not your household';
+  end if;
+  if t.status <> 'pending' then
+    raise exception 'that turn is not pending';
+  end if;
+
+  if me is distinct from t.assignee_id then
+    select allow_member_cross_complete into allow_cross
+    from households where id = t.household_id;
+    if not coalesce(allow_cross, false) then
+      raise exception 'only the assigned member can skip this — an admin can let anyone act for anyone in Settings';
+    end if;
+  end if;
+
+  update chore_turns
+     set status = 'skipped', completed_at = now(), completed_by = me, note = p_note
+   where id = p_turn
+  returning * into t;
+
+  select * into c from chores where id = t.chore_id;
+
+  if c.cadence = 'scheduled' then
+    perform materialize_schedule(t.chore_id);
+  else
+    perform top_up_queue(t.chore_id);
+  end if;
+
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  select t.household_id, me,
+         'skipped_chore',
+         case when me is distinct from t.assignee_id
+              then p.full_name || ' skipped ' || c.name || ' for ' || a.full_name
+              else p.full_name || ' skipped ' || c.name
+         end,
+         jsonb_build_object('chore_id', c.id, 'turn_id', t.id, 'emoji', c.emoji)
+  from profiles p
+  join profiles a on a.id = t.assignee_id
+  where p.id = coalesce(me, t.assignee_id);
+
+  return t;
+end;
+$$;
+
+-- set_away/clear_away only topped up on_demand chores after resyncing —
+-- standing chores need the same top-up (they are, in effect, a queue of
+-- depth 1) or a standing chore could sit with zero pending turns after
+-- everyone's away status changes.
+create or replace function set_away(p_until timestamptz default null)
+returns member_away
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me   uuid := auth.uid();
+  hh   uuid;
+  name text;
+  row  member_away%rowtype;
+  c    record;
+begin
+  select household_id, full_name into hh, name from profiles where id = me;
+  if hh is null then raise exception 'you are not in a household'; end if;
+
+  update member_away
+     set ends_at = now()
+   where profile_id = me
+     and starts_at <= now()
+     and (ends_at is null or now() < ends_at);
+
+  insert into member_away (profile_id, household_id, ends_at)
+  values (me, hh, p_until)
+  returning * into row;
+
+  for c in select id, cadence from chores where household_id = hh and is_active loop
+    perform resync_pending_turns(c.id);
+    if c.cadence <> 'scheduled' then
+      perform top_up_queue(c.id);
+    end if;
+  end loop;
+
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  values (hh, me, 'set_away',
+          name || ' is away' || case when p_until is not null
+            then ' until ' || to_char(p_until, 'Mon DD') else '' end,
+          jsonb_build_object('until', p_until));
+
+  return row;
+end;
+$$;
+
+create or replace function clear_away()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me   uuid := auth.uid();
+  hh   uuid;
+  name text;
+  c    record;
+begin
+  select household_id, full_name into hh, name from profiles where id = me;
+  if hh is null then raise exception 'you are not in a household'; end if;
+
+  update member_away
+     set ends_at = now()
+   where profile_id = me
+     and starts_at <= now()
+     and (ends_at is null or now() < ends_at);
+
+  for c in select id, cadence from chores where household_id = hh and is_active loop
+    perform resync_pending_turns(c.id);
+    if c.cadence <> 'scheduled' then
+      perform top_up_queue(c.id);
+    end if;
+  end loop;
+
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  values (hh, me, 'cleared_away', name || ' is back', '{}'::jsonb);
+end;
+$$;
+
+/* ---------------------------------------------------------------- undo */
+
+-- Reopening a done/skipped STANDING turn must not leave two pending turns
+-- alive at once — top_up_queue already created the next one the moment this
+-- turn resolved. That next turn is not real history (it was never done or
+-- skipped), so deleting it before reopening the original is safe and keeps
+-- "exactly one pending turn" true for standing chores.
+create or replace function undo_turn(p_turn uuid)
+returns chore_turns
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  t           chore_turns%rowtype;
+  c           chores%rowtype;
+  me          uuid := auth.uid();
+  allow_cross boolean;
+  verb_word   text;
+begin
+  select * into t from chore_turns where id = p_turn for update;
+  if not found then
+    raise exception 'turn not found';
+  end if;
+  if not is_household_member(t.household_id) then
+    raise exception 'not your household';
+  end if;
+  if t.status not in ('done', 'skipped') then
+    raise exception 'that turn is not done or skipped';
+  end if;
+
+  if me is distinct from t.assignee_id then
+    select allow_member_cross_complete into allow_cross
+    from households where id = t.household_id;
+    if not coalesce(allow_cross, false) then
+      raise exception 'only the assigned member can undo this — an admin can let anyone act for anyone in Settings';
+    end if;
+  end if;
+
+  verb_word := case when t.status = 'skipped' then 'skip' else 'done' end;
+
+  select * into c from chores where id = t.chore_id;
+  if c.cadence = 'standing' then
+    delete from chore_turns
+     where chore_id = t.chore_id and status = 'pending' and turn_number > t.turn_number;
+  end if;
+
+  update chore_turns
+     set status = 'pending', completed_at = null, completed_by = null, note = null
+   where id = p_turn
+  returning * into t;
+
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  select t.household_id, me, 'undid_chore',
+         p.full_name || ' undid ' || verb_word || ' on ' || c.name,
+         jsonb_build_object('chore_id', c.id, 'turn_id', t.id, 'emoji', c.emoji)
+  from profiles p where p.id = coalesce(me, t.assignee_id);
+
+  return t;
+end;
+$$;
+
+
+/**************************************************************************
+ * 0022_turn_flags.sql
+ *************************************************************************/
+
+-- A per-person nudge, distinct from flag_on_demand (0002/0012): that one is
+-- chore-wide ("the dishwasher is full") and only exists for on_demand chores.
+-- This one points at a specific housemate on any pending turn ("hey, this
+-- needs you") without changing who the rotation says is actually up — a
+-- visible reminder, not a reassignment. Columns rather than a table: a flag
+-- is a single overwritable nudge, not history worth keeping once resolved.
+
+alter table chore_turns
+  add column if not exists flagged_for uuid references profiles(id) on delete set null,
+  add column if not exists flagged_by  uuid references profiles(id) on delete set null,
+  add column if not exists flagged_at  timestamptz,
+  add column if not exists flag_note   text
+    check (flag_note is null or char_length(flag_note) <= 140);
+
+/* --------------------------------------------------------------- flag/clear */
+
+create or replace function flag_turn(p_turn uuid, p_target uuid, p_message text default null)
+returns chore_turns
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+  t  chore_turns%rowtype;
+  c  chores%rowtype;
+begin
+  select * into t from chore_turns where id = p_turn for update;
+  if not found then raise exception 'turn not found'; end if;
+  if not is_household_member(t.household_id) then raise exception 'not your household'; end if;
+  if t.status <> 'pending' then raise exception 'that turn is not pending'; end if;
+  if not exists (select 1 from profiles where id = p_target and household_id = t.household_id) then
+    raise exception 'that person is not in your household';
+  end if;
+
+  update chore_turns
+     set flagged_for = p_target, flagged_by = coalesce(me, t.assignee_id),
+         flagged_at = now(), flag_note = nullif(trim(coalesce(p_message, '')), '')
+   where id = p_turn
+  returning * into t;
+
+  select * into c from chores where id = t.chore_id;
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  select t.household_id, me,
+         'flagged_for',
+         p.full_name || ' flagged ' || c.name || ' for ' || tgt.full_name,
+         jsonb_build_object('chore_id', c.id, 'turn_id', t.id, 'emoji', c.emoji)
+  from profiles p, profiles tgt
+  where p.id = coalesce(me, t.assignee_id) and tgt.id = p_target;
+
+  return t;
+end;
+$$;
+
+-- Restricted to the people the flag actually concerns — the flagger, the
+-- flagged person, or whoever the turn is assigned to — rather than any
+-- household member, so a flag can't be dismissed by someone uninvolved.
+create or replace function clear_flag(p_turn uuid)
+returns chore_turns
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me uuid := auth.uid();
+  t  chore_turns%rowtype;
+begin
+  select * into t from chore_turns where id = p_turn for update;
+  if not found then raise exception 'turn not found'; end if;
+  if not is_household_member(t.household_id) then raise exception 'not your household'; end if;
+  if me is distinct from t.flagged_by and me is distinct from t.flagged_for and me is distinct from t.assignee_id then
+    raise exception 'only the flagger, the flagged person, or the assignee can clear this';
+  end if;
+
+  update chore_turns
+     set flagged_for = null, flagged_by = null, flagged_at = null, flag_note = null
+   where id = p_turn
+  returning * into t;
+
+  return t;
+end;
+$$;
+
+/* -------------------------------------------- clear the flag on resolution */
+
+-- A flag is a nudge about a turn that still needs doing; once it's resolved
+-- (done or skipped) the nudge is moot. Not cleared by pass_turn (the flag
+-- still applies to whoever it now lands on) or undo_turn (already null by
+-- the time undo runs, since complete/skip just cleared it).
+
+create or replace function complete_turn(p_turn uuid, p_note text default null)
+returns chore_turns
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  t           chore_turns%rowtype;
+  c           chores%rowtype;
+  me          uuid := auth.uid();
+  allow_cross boolean;
+begin
+  select * into t from chore_turns where id = p_turn for update;
+  if not found then
+    raise exception 'turn not found';
+  end if;
+  if not is_household_member(t.household_id) then
+    raise exception 'not your household';
+  end if;
+  if t.status = 'done' then
+    return t;
+  end if;
+
+  if me is distinct from t.assignee_id then
+    select allow_member_cross_complete into allow_cross
+    from households where id = t.household_id;
+    if not coalesce(allow_cross, false) then
+      raise exception 'only the assigned member can complete this — an admin can let anyone complete anyone''s chores in Settings';
+    end if;
+  end if;
+
+  update chore_turns
+     set status = 'done', completed_at = now(), completed_by = coalesce(me, t.assignee_id), note = p_note,
+         flagged_for = null, flagged_by = null, flagged_at = null, flag_note = null
+   where id = p_turn
+  returning * into t;
+
+  select * into c from chores where id = t.chore_id;
+
+  if c.cadence = 'scheduled' then
+    perform materialize_schedule(t.chore_id);
+  else
+    perform top_up_queue(t.chore_id);
+  end if;
+
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  select t.household_id, coalesce(me, t.assignee_id), 'completed_chore',
+         p.full_name || ' did ' || c.name,
+         jsonb_build_object('chore_id', c.id, 'turn_id', t.id, 'emoji', c.emoji)
+  from profiles p where p.id = coalesce(me, t.assignee_id);
+
+  return t;
+end;
+$$;
+
+create or replace function kiosk_complete_turn(
+  p_household uuid,
+  p_turn      uuid,
+  p_profile   uuid,
+  p_note      text default null
+)
+returns chore_turns
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  t chore_turns%rowtype;
+  c chores%rowtype;
+begin
+  if not exists (select 1 from profiles where id = p_profile and household_id = p_household) then
+    raise exception 'not a member of this household';
+  end if;
+
+  select * into t from chore_turns where id = p_turn and household_id = p_household for update;
+  if not found then raise exception 'turn not found'; end if;
+  if t.status = 'done' then return t; end if;
+
+  update chore_turns
+     set status = 'done', completed_at = now(), completed_by = p_profile, note = p_note,
+         flagged_for = null, flagged_by = null, flagged_at = null, flag_note = null
+   where id = p_turn
+  returning * into t;
+
+  select * into c from chores where id = t.chore_id;
+
+  if c.cadence = 'scheduled' then
+    perform materialize_schedule(t.chore_id);
+  else
+    perform top_up_queue(t.chore_id);
+  end if;
+
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  select t.household_id, p_profile, 'completed_chore',
+         p.full_name || ' did ' || c.name,
+         jsonb_build_object('chore_id', c.id, 'turn_id', t.id, 'emoji', c.emoji)
+  from profiles p where p.id = p_profile;
+
+  return t;
+end;
+$$;
+
+create or replace function skip_turn(p_turn uuid, p_note text default null)
+returns chore_turns
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  t           chore_turns%rowtype;
+  c           chores%rowtype;
+  me          uuid := auth.uid();
+  allow_cross boolean;
+begin
+  select * into t from chore_turns where id = p_turn for update;
+  if not found then
+    raise exception 'turn not found';
+  end if;
+  if not is_household_member(t.household_id) then
+    raise exception 'not your household';
+  end if;
+  if t.status <> 'pending' then
+    raise exception 'that turn is not pending';
+  end if;
+
+  if me is distinct from t.assignee_id then
+    select allow_member_cross_complete into allow_cross
+    from households where id = t.household_id;
+    if not coalesce(allow_cross, false) then
+      raise exception 'only the assigned member can skip this — an admin can let anyone act for anyone in Settings';
+    end if;
+  end if;
+
+  update chore_turns
+     set status = 'skipped', completed_at = now(), completed_by = me, note = p_note,
+         flagged_for = null, flagged_by = null, flagged_at = null, flag_note = null
+   where id = p_turn
+  returning * into t;
+
+  select * into c from chores where id = t.chore_id;
+
+  if c.cadence = 'scheduled' then
+    perform materialize_schedule(t.chore_id);
+  else
+    perform top_up_queue(t.chore_id);
+  end if;
+
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  select t.household_id, me,
+         'skipped_chore',
+         case when me is distinct from t.assignee_id
+              then p.full_name || ' skipped ' || c.name || ' for ' || a.full_name
+              else p.full_name || ' skipped ' || c.name
+         end,
+         jsonb_build_object('chore_id', c.id, 'turn_id', t.id, 'emoji', c.emoji)
+  from profiles p
+  join profiles a on a.id = t.assignee_id
+  where p.id = coalesce(me, t.assignee_id);
+
+  return t;
+end;
+$$;
+
+
+/**************************************************************************
+ * 0023_get_ahead_and_defer.sql
+ *************************************************************************/
+
+-- Get ahead / defer: two personal, self-only escape hatches for someone who
+-- knows they'll be busy. Neither one reassigns or reorders anyone else's
+-- turn — get_ahead completes your own next turn early; defer pushes your own
+-- turn's due date later. Both are rate-limited (default: 2 "ahead"/deferred
+-- at a time, 1 use per rolling 30 days) to keep them from being used to
+-- dodge the rotation outright, admin-configurable, on by default, and
+-- admin-disableable.
+--
+-- Config lives in household_modules.settings under a new module key
+-- 'get_ahead' — deliberately not added to src/lib/modules.ts's page-having
+-- registry, since household_modules/set_module are already generic by
+-- design (CLAUDE.md calls the unused `settings` jsonb column exactly the
+-- right home for this). "No row for this household" means enabled — safe
+-- because 'get_ahead' is not in default_modules(), so create_household()
+-- never inserts a `false` row for it.
+
+create table if not exists chore_advance_log (
+  id         uuid primary key default gen_random_uuid(),
+  chore_id   uuid not null references chores(id) on delete cascade,
+  profile_id uuid not null references profiles(id) on delete cascade,
+  kind       text not null check (kind in ('get_ahead', 'defer')),
+  turn_id    uuid not null references chore_turns(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists chore_advance_log_chore_profile_kind_idx
+  on chore_advance_log (chore_id, profile_id, kind, created_at desc);
+create index if not exists chore_advance_log_turn_id_idx on chore_advance_log (turn_id);
+
+alter table chore_advance_log enable row level security;
+
+drop policy if exists advance_log_read on chore_advance_log;
+create policy advance_log_read on chore_advance_log for select
+  using (exists (select 1 from chores c where c.id = chore_id and is_household_member(c.household_id)));
+-- No insert/update/delete policy: writes only through get_ahead()/defer_turn() below.
+
+/* -------------------------------------------------------------- helpers */
+
+-- Mirrors materialize_schedule's own day/interval matching rule, kept as a
+-- standalone function rather than reusing materialize_schedule itself, so
+-- this feature can't risk regressing that function's tested loop.
+create or replace function next_scheduled_date(p_chore uuid, p_after date)
+returns date
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  c        chores%rowtype;
+  cursor_d date;
+  anchor_w date;
+  wk_off   int;
+begin
+  select * into c from chores where id = p_chore and cadence = 'scheduled';
+  if not found or array_length(c.days_of_week, 1) is null then
+    return null;
+  end if;
+
+  anchor_w := date_trunc('week', c.anchor_date)::date;
+  cursor_d := p_after + 1;
+
+  loop
+    wk_off := ((date_trunc('week', cursor_d)::date - anchor_w) / 7)::int;
+    if (extract(dow from cursor_d)::smallint = any (c.days_of_week))
+       and (wk_off % greatest(c.interval_weeks, 1) = 0) then
+      return cursor_d;
+    end if;
+    cursor_d := cursor_d + 1;
+  end loop;
+end;
+$$;
+
+/* ------------------------------------------------------------- get_ahead */
+
+-- Standing chores are excluded: get-ahead's only possible implementation
+-- would require more than one simultaneously-pending turn on a chore whose
+-- entire model is "exactly one pending turn at a time" — pass_turn is
+-- already the right release valve there.
+create or replace function get_ahead(p_chore uuid)
+returns chore_turns
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me          uuid := auth.uid();
+  c           chores%rowtype;
+  n           int;
+  mod_enabled boolean;
+  mod_settings jsonb;
+  max_ahead   int;
+  max_per_30d int;
+  cursor_no   int;
+  ahead_count int;
+  uses_30d    int;
+  target      chore_turns%rowtype;
+  tz          text;
+  next_due    date;
+  last_due    date;
+  iterations  int := 0;
+  cap         constant int := 500;
+begin
+  select * into c from chores where id = p_chore;
+  if not found then raise exception 'chore not found'; end if;
+  if not is_household_member(c.household_id) then raise exception 'not your household'; end if;
+  if c.cadence = 'standing' then
+    raise exception 'get-ahead does not apply to standing chores — pass it on if you cannot get to it';
+  end if;
+  if not exists (select 1 from chore_rotation where chore_id = p_chore and profile_id = me) then
+    raise exception 'you are not in this chore''s rotation';
+  end if;
+
+  select enabled, settings into mod_enabled, mod_settings
+    from household_modules where household_id = c.household_id and module = 'get_ahead';
+  if not coalesce(mod_enabled, true) then raise exception 'get-ahead is turned off for this house'; end if;
+  mod_settings := coalesce(mod_settings, '{}'::jsonb);
+  max_ahead   := coalesce((mod_settings #>> '{get_ahead,max_ahead}')::int, 2);
+  max_per_30d := coalesce((mod_settings #>> '{get_ahead,max_per_30d}')::int, 1);
+
+  select count(*) into uses_30d from chore_advance_log
+   where chore_id = p_chore and profile_id = me and kind = 'get_ahead'
+     and created_at > now() - interval '30 days';
+  if uses_30d >= max_per_30d then
+    raise exception 'You have used get-ahead % time(s) in the last 30 days — the house limit is %.', uses_30d, max_per_30d;
+  end if;
+
+  -- "Already N ahead" = N of your get_ahead completions still sit beyond the
+  -- chore's current pending frontier. This self-resolves as the rotation
+  -- naturally catches up to and past those turns — no reset job needed.
+  select case when min(turn_number) is null
+           then (select coalesce(max(turn_number), -1) from chore_turns where chore_id = p_chore)
+           else min(turn_number) - 1 end
+    into cursor_no
+  from chore_turns where chore_id = p_chore and status = 'pending';
+
+  select count(*) into ahead_count
+  from chore_advance_log l join chore_turns t on t.id = l.turn_id
+  where l.chore_id = p_chore and l.profile_id = me and l.kind = 'get_ahead' and t.turn_number > cursor_no;
+  if ahead_count >= max_ahead then
+    raise exception 'You are already % turn(s) ahead on this chore — let the rotation catch up first.', max_ahead;
+  end if;
+
+  -- Common case: you already have a pending turn of your own materialized.
+  select * into target from chore_turns
+   where chore_id = p_chore and status = 'pending' and assignee_id = me
+   order by turn_number limit 1;
+
+  if not found then
+    -- Rare case: walk forward, materializing turns as we go, until we reach
+    -- one that lands on you. Bounded so an unreachable rotation (nobody
+    -- assignable) can't loop forever.
+    select count(*) into n from chore_rotation where chore_id = p_chore;
+    if n = 0 then raise exception 'this chore has no rotation'; end if;
+
+    if c.cadence = 'scheduled' then
+      select timezone into tz from households where id = c.household_id;
+      select coalesce(max((due_at at time zone tz)::date), c.anchor_date - 1) into last_due
+        from chore_turns where chore_id = p_chore;
+      loop
+        iterations := iterations + 1;
+        exit when iterations > cap;
+        next_due := next_scheduled_date(p_chore, last_due);
+        exit when next_due is null;
+        target := append_turn(p_chore, (next_due + make_interval(hours => c.due_hour)) at time zone tz);
+        last_due := next_due;
+        exit when target.id is not null and target.assignee_id = me;
+      end loop;
+    else
+      loop
+        iterations := iterations + 1;
+        exit when iterations > cap;
+        target := append_turn(p_chore, null);
+        exit when target.id is null;
+        exit when target.assignee_id = me;
+      end loop;
+    end if;
+
+    if target.id is null or target.assignee_id is distinct from me then
+      raise exception 'could not find an upcoming turn of yours to get ahead on';
+    end if;
+  end if;
+
+  update chore_turns
+     set status = 'done', completed_at = now(), completed_by = me,
+         note = coalesce(note, 'Done ahead of schedule')
+   where id = target.id
+  returning * into target;
+
+  -- Same post-completion top-up complete_turn does — without it, an
+  -- on_demand queue would run one turn short of queue_depth after a get-ahead.
+  if c.cadence = 'scheduled' then
+    perform materialize_schedule(p_chore);
+  else
+    perform top_up_queue(p_chore);
+  end if;
+
+  insert into chore_advance_log (chore_id, profile_id, kind, turn_id)
+  values (p_chore, me, 'get_ahead', target.id);
+
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  select c.household_id, me, 'got_ahead', p.full_name || ' got ahead on ' || c.name,
+         jsonb_build_object('chore_id', c.id, 'turn_id', target.id, 'emoji', c.emoji)
+  from profiles p where p.id = me;
+
+  return target;
+end;
+$$;
+
+/* --------------------------------------------------------------- defer */
+
+create or replace function defer_turn(p_turn uuid)
+returns chore_turns
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me          uuid := auth.uid();
+  t           chore_turns%rowtype;
+  c           chores%rowtype;
+  mod_enabled boolean;
+  mod_settings jsonb;
+  max_defers  int;
+  max_per_30d int;
+  defer_count int;
+  uses_30d    int;
+  tz          text;
+  next_due    date;
+begin
+  select * into t from chore_turns where id = p_turn for update;
+  if not found then raise exception 'turn not found'; end if;
+  if not is_household_member(t.household_id) then raise exception 'not your household'; end if;
+  if t.status <> 'pending' then raise exception 'that turn is not pending'; end if;
+  if me is distinct from t.assignee_id then raise exception 'you can only defer your own turn'; end if;
+  if t.due_at is null then raise exception 'this turn has no due date to push back'; end if;
+
+  select * into c from chores where id = t.chore_id;
+  -- Standing turns never carry a due_at, so the check above already excludes
+  -- them; pass_turn is the equivalent tool there.
+
+  select enabled, settings into mod_enabled, mod_settings
+    from household_modules where household_id = c.household_id and module = 'get_ahead';
+  if not coalesce(mod_enabled, true) then raise exception 'get-ahead/defer is turned off for this house'; end if;
+  mod_settings := coalesce(mod_settings, '{}'::jsonb);
+  max_defers  := coalesce((mod_settings #>> '{defer,max_ahead}')::int, 2);
+  max_per_30d := coalesce((mod_settings #>> '{defer,max_per_30d}')::int, 1);
+
+  select count(*) into defer_count from chore_advance_log where turn_id = p_turn and kind = 'defer';
+  if defer_count >= max_defers then
+    raise exception 'This turn has already been deferred % time(s) — go ahead and do it, skip it, or pass it.', max_defers;
+  end if;
+
+  select count(*) into uses_30d from chore_advance_log
+   where chore_id = t.chore_id and profile_id = me and kind = 'defer'
+     and created_at > now() - interval '30 days';
+  if uses_30d >= max_per_30d then
+    raise exception 'You have deferred % time(s) in the last 30 days — the house limit is %.', uses_30d, max_per_30d;
+  end if;
+
+  if c.cadence = 'scheduled' then
+    select timezone into tz from households where id = c.household_id;
+    next_due := next_scheduled_date(t.chore_id, (t.due_at at time zone tz)::date);
+    if next_due is null then raise exception 'could not find a later date for this chore''s schedule'; end if;
+    update chore_turns set due_at = (next_due + make_interval(hours => c.due_hour)) at time zone tz
+     where id = p_turn
+    returning * into t;
+  else
+    update chore_turns set due_at = null where id = p_turn returning * into t;
+  end if;
+
+  insert into chore_advance_log (chore_id, profile_id, kind, turn_id)
+  values (t.chore_id, me, 'defer', p_turn);
+
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  select t.household_id, me, 'deferred_chore', p.full_name || ' pushed back ' || c.name,
+         jsonb_build_object('chore_id', c.id, 'turn_id', t.id, 'emoji', c.emoji)
+  from profiles p where p.id = me;
+
+  return t;
+end;
+$$;
+
+
+/**************************************************************************
+ * 0024_geofence.sql
+ *************************************************************************/
+
+-- Optional, admin-configurable, off by default: require a member-device
+-- completion to happen within a radius of the house. Kiosk completions are
+-- exempt — the kiosk is physically fixed at the household's location, so a
+-- distance check there is meaningless, and kiosk_complete_turn is a fully
+-- separate RPC (locked to service_role since 0015) that this migration does
+-- not touch. Only complete_turn is gated: skip/pass/undo aren't a presence
+-- claim about doing the chore right now, so they're untouched too.
+--
+-- Privacy: raw lat/lon are transient RPC arguments only, never persisted —
+-- chore_turns stores just a rounded distance and a boolean. This app is
+-- newly open-source; precise per-completion location history would be a new,
+-- unjustified PII category for what is only ever a yes/no distance check.
+
+alter table households
+  add column if not exists geofence_enabled boolean not null default false,
+  add column if not exists geofence_radius_meters integer not null default 150
+    check (geofence_radius_meters between 20 and 2000);
+
+alter table chore_turns
+  add column if not exists completion_distance_m integer,
+  add column if not exists completion_within_geofence boolean;
+
+/* --------------------------------------------------------------- helpers */
+
+create or replace function haversine_meters(
+  lat1 double precision, lon1 double precision,
+  lat2 double precision, lon2 double precision
+)
+returns double precision
+language sql
+immutable
+as $$
+  select 6371000 * 2 * asin(least(1, sqrt(
+    sin(radians(lat2 - lat1) / 2) ^ 2
+    + cos(radians(lat1)) * cos(radians(lat2)) * sin(radians(lon2 - lon1) / 2) ^ 2
+  )));
+$$;
+
+-- Refuses to enable until the household has a location set — enabling with
+-- nothing to measure from would otherwise either always pass or always fail.
+create or replace function set_geofence(p_enabled boolean, p_radius_meters integer default null)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  hh  uuid;
+  lat double precision;
+  lon double precision;
+begin
+  if not is_household_admin() then
+    raise exception 'only an admin can change this';
+  end if;
+  select household_id into hh from profiles where id = auth.uid();
+  if hh is null then raise exception 'you are not in a household'; end if;
+
+  if p_enabled then
+    select latitude, longitude into lat, lon from households where id = hh;
+    if lat is null or lon is null then
+      raise exception 'set a household location first — Settings → Household → Location';
+    end if;
+  end if;
+
+  update households
+     set geofence_enabled = p_enabled,
+         geofence_radius_meters = coalesce(p_radius_meters, geofence_radius_meters)
+   where id = hh;
+end;
+$$;
+
+/* ---------------------------------------------------- complete_turn (again) */
+
+-- Adds optional p_lat/p_lon. Cannot `create or replace` a new parameter onto
+-- an existing signature — drop the prior one first.
+drop function if exists complete_turn(uuid, text);
+
+create or replace function complete_turn(
+  p_turn uuid,
+  p_note text default null,
+  p_lat  double precision default null,
+  p_lon  double precision default null
+)
+returns chore_turns
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  t           chore_turns%rowtype;
+  c           chores%rowtype;
+  hh          households%rowtype;
+  me          uuid := auth.uid();
+  dist        double precision;
+  within_geo  boolean;
+begin
+  select * into t from chore_turns where id = p_turn for update;
+  if not found then
+    raise exception 'turn not found';
+  end if;
+  if not is_household_member(t.household_id) then
+    raise exception 'not your household';
+  end if;
+  if t.status = 'done' then
+    return t;
+  end if;
+
+  select * into hh from households where id = t.household_id;
+
+  if me is distinct from t.assignee_id then
+    if not coalesce(hh.allow_member_cross_complete, false) then
+      raise exception 'only the assigned member can complete this — an admin can let anyone complete anyone''s chores in Settings';
+    end if;
+  end if;
+
+  -- Fails closed: enabled + missing coordinates is treated the same as
+  -- enabled + out of range, rather than silently skipping the check.
+  if hh.geofence_enabled then
+    if p_lat is null or p_lon is null then
+      raise exception 'turn on location to complete chores for this house';
+    end if;
+    dist := haversine_meters(p_lat, p_lon, hh.latitude, hh.longitude);
+    within_geo := dist <= hh.geofence_radius_meters;
+    if not within_geo then
+      raise exception 'you''re about % m from the house — get within % m to mark this done',
+        round(dist)::int, hh.geofence_radius_meters;
+    end if;
+  end if;
+
+  update chore_turns
+     set status = 'done', completed_at = now(), completed_by = coalesce(me, t.assignee_id), note = p_note,
+         flagged_for = null, flagged_by = null, flagged_at = null, flag_note = null,
+         completion_distance_m = case when hh.geofence_enabled then round(dist)::int else null end,
+         completion_within_geofence = case when hh.geofence_enabled then within_geo else null end
+   where id = p_turn
+  returning * into t;
+
+  select * into c from chores where id = t.chore_id;
+
+  if c.cadence = 'scheduled' then
+    perform materialize_schedule(t.chore_id);
+  else
+    perform top_up_queue(t.chore_id);
+  end if;
+
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  select t.household_id, coalesce(me, t.assignee_id), 'completed_chore',
+         p.full_name || ' did ' || c.name,
+         jsonb_build_object('chore_id', c.id, 'turn_id', t.id, 'emoji', c.emoji)
+  from profiles p where p.id = coalesce(me, t.assignee_id);
+
+  return t;
+end;
+$$;
+
+
+/**************************************************************************
+ * 0025_platform_admin_identity.sql
+ *************************************************************************/
+
+-- Platform-admin identity: scaffolding for the operator (Tejas) to see
+-- cross-household aggregates once other households actually use this
+-- open-sourced app — today there is exactly one real household.
+--
+-- Two independent locks, not a `platform_admins` table:
+--   * a Postgres GUC (app.platform_admin_emails), set once per deployment
+--     via `alter database ... set ...` — this is the real authorization
+--     boundary, since a security-definer RPC bypasses RLS entirely once
+--     inside it, so it needs its own check independent of anything Next.js
+--     does. See src/lib/platform-admin.ts for the matching Next.js-side gate
+--     (route visibility only, not authorization) and .env.local.example for
+--     the paired PLATFORM_ADMIN_EMAILS env var.
+-- A DB table was considered and rejected: it's new writable schema (RLS,
+-- seeding) for a problem an env var + GUC solves with zero schema footprint.
+-- Passing an allowlist as an RPC argument was also rejected: it's spoofable
+-- — nothing stops a caller passing their own email as "the allowlist".
+--
+-- If the GUC is never set (a fresh self-hosted deployment), this returns
+-- false for everyone — safe by default, nothing to misconfigure into an
+-- accidental opening.
+
+create or replace function is_platform_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select lower(email) from profiles where id = auth.uid())
+      = any (string_to_array(lower(coalesce(current_setting('app.platform_admin_emails', true), '')), ',')),
+    false
+  );
+$$;
+
+/* ------------------------------------------------------------ signup source */
+
+-- Honest, minimal "join source": captured only when a household is created
+-- (its origin), not when someone redeems an invite to join an existing one —
+-- that's always "invited by a housemate," a fixed bucket needing no column.
+-- No IP capture, no IP geolocation, no user-agent logging anywhere in this
+-- app — the highest-regret PII categories to ship by default in code other
+-- people now self-host for their own families.
+
+alter table households add column if not exists signup_source text
+  check (signup_source is null or signup_source ~ '^[a-z0-9_-]{1,40}$');
+
+-- Cannot `create or replace` a new parameter onto an existing signature —
+-- drop the 0005 six-argument version first.
+drop function if exists create_household(text, text, text, text, text, text[]);
+
+create or replace function create_household(
+  p_name          text,
+  p_address       text default null,
+  p_timezone      text default 'America/Detroit',
+  p_full_name     text default null,
+  p_initials      text default null,
+  p_modules       text[] default null,
+  p_signup_source text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me       uuid := auth.uid();
+  new_id   uuid;
+  chore_id uuid;
+  existing uuid;
+  wanted   text[] := coalesce(p_modules, default_modules());
+begin
+  if me is null then
+    raise exception 'not signed in';
+  end if;
+
+  select household_id into existing from profiles where id = me;
+  if existing is not null then
+    raise exception 'you are already in a household';
+  end if;
+
+  insert into households (name, address, timezone, signup_source)
+  values (
+    trim(p_name), nullif(trim(coalesce(p_address, '')), ''), p_timezone,
+    nullif(trim(coalesce(p_signup_source, '')), '')
+  )
+  returning id into new_id;
+
+  update profiles
+     set household_id = new_id,
+         is_admin     = true,
+         full_name    = coalesce(nullif(trim(coalesce(p_full_name, '')), ''), full_name),
+         initials     = coalesce(nullif(upper(trim(coalesce(p_initials, ''))), ''), initials)
+   where id = me;
+
+  insert into household_modules (household_id, module, enabled, updated_by)
+  select new_id, d, d = any (wanted), me
+  from unnest(default_modules()) d;
+
+  insert into household_modules (household_id, module, enabled, updated_by)
+  select new_id, w, true, me
+  from unnest(wanted) w
+  where not (w = any (default_modules()))
+  on conflict do nothing;
+
+  if 'chores' = any (wanted) then
+    for chore_id in
+      insert into chores (household_id, name, emoji, description, cadence,
+                          days_of_week, interval_weeks, due_hour, queue_depth, sort_order)
+      values
+        (new_id, 'Floors', '🧹', 'Sweep and mop the common areas', 'scheduled', '{0,5}', 1, 20, 4, 1),
+        (new_id, 'Microwave', '🍲', 'Wipe out the microwave', 'scheduled', '{6}', 2, 20, 4, 2),
+        (new_id, 'Trash to curb', '🗑️', 'Bins out the night before pickup', 'scheduled', '{0}', 1, 19, 4, 3),
+        (new_id, 'Dishes', '🍽️', 'Run and unload a load', 'on_demand', '{}', 1, 20, 4, 4),
+        (new_id, 'Trash when full', '🚮', 'Swap the kitchen bag', 'on_demand', '{}', 1, 20, 4, 5)
+      returning id
+    loop
+      insert into chore_rotation (chore_id, profile_id, position) values (chore_id, me, 0);
+    end loop;
+
+    for chore_id in select id from chores where household_id = new_id loop
+      if (select cadence from chores where id = chore_id) = 'scheduled' then
+        perform materialize_schedule(chore_id);
+      else
+        perform top_up_queue(chore_id);
+      end if;
+    end loop;
+  end if;
+
+  insert into activity_log (household_id, actor_id, verb, summary)
+  values (new_id, me, 'created_household',
+          (select full_name from profiles where id = me) || ' started the house');
+
+  return new_id;
+end;
+$$;
+
+
+/**************************************************************************
+ * 0026_feedback.sql
+ *************************************************************************/
+
+-- A lightweight in-app way to report a bug or request a feature. No RLS
+-- policy at all — same pattern as household_ai_config (0011): every access
+-- goes through a security-definer function (submit_feedback here to write,
+-- platform_feedback in 0027 to read), so nobody, including a household's own
+-- admin, can query this table directly.
+
+create table if not exists feedback_submissions (
+  id           uuid primary key default gen_random_uuid(),
+  household_id uuid references households(id) on delete set null,
+  profile_id   uuid references profiles(id) on delete set null,
+  kind         text not null check (kind in ('bug', 'feature')),
+  body         text not null check (char_length(trim(body)) between 1 and 4000),
+  metadata     jsonb not null default '{}',
+  created_at   timestamptz not null default now()
+);
+
+alter table feedback_submissions enable row level security;
+
+-- household_id/profile_id are stamped from auth.uid() server-side, never
+-- trusted from the client, so nobody can spoof a submission as coming from
+-- another household. household_id is nullable so someone hitting a bug
+-- before finishing onboarding can still report it.
+create or replace function submit_feedback(p_kind text, p_body text, p_metadata jsonb default '{}')
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me     uuid := auth.uid();
+  hh     uuid;
+  new_id uuid;
+begin
+  if me is null then raise exception 'not signed in'; end if;
+  if p_kind not in ('bug', 'feature') then raise exception 'unknown feedback kind'; end if;
+  if coalesce(trim(p_body), '') = '' then raise exception 'say a little about what happened'; end if;
+
+  select household_id into hh from profiles where id = me;
+
+  insert into feedback_submissions (household_id, profile_id, kind, body, metadata)
+  values (hh, me, p_kind, trim(p_body), coalesce(p_metadata, '{}'::jsonb))
+  returning id into new_id;
+
+  return new_id;
+end;
+$$;
+
+
+/**************************************************************************
+ * 0027_platform_stats.sql
+ *************************************************************************/
+
+-- Read-only, aggregate-only cross-household stats for the platform-admin
+-- page (src/app/platform-admin) — derived from data that already exists
+-- rather than a new telemetry pipeline. No raw per-user rows anywhere here
+-- except platform_feedback, which is a deliberate, narrow exception: replying
+-- to a bug report requires knowing who filed it.
+--
+-- Every function opens with an is_platform_admin() check — this is the real
+-- authorization boundary (see 0025), not the Next.js route gate.
+
+create or replace function platform_stats()
+returns table (
+  households_total            integer,
+  households_last_30d         integer,
+  members_total                integer,
+  members_last_30d            integer,
+  admins_total                 integer,
+  module_enabled_counts        jsonb,
+  turns_completed_last_7d      integer,
+  turns_completed_last_30d     integer,
+  turns_skipped_last_30d       integer,
+  cross_complete_enabled_count integer,
+  geofence_enabled_count       integer,
+  signup_source_counts         jsonb,
+  feedback_total                integer,
+  feedback_last_30d            integer
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not is_platform_admin() then raise exception 'not authorized'; end if;
+
+  return query select
+    (select count(*)::int from households),
+    (select count(*)::int from households where created_at > now() - interval '30 days'),
+    (select count(*)::int from profiles where household_id is not null),
+    (select count(*)::int from profiles where household_id is not null and created_at > now() - interval '30 days'),
+    (select count(*)::int from profiles where is_admin),
+    (select coalesce(jsonb_object_agg(module, cnt), '{}'::jsonb)
+       from (select module, count(*) cnt from household_modules where enabled group by module) s),
+    (select count(*)::int from chore_turns where status = 'done' and completed_at > now() - interval '7 days'),
+    (select count(*)::int from chore_turns where status = 'done' and completed_at > now() - interval '30 days'),
+    (select count(*)::int from chore_turns where status = 'skipped' and completed_at > now() - interval '30 days'),
+    (select count(*)::int from households where allow_member_cross_complete),
+    (select count(*)::int from households where geofence_enabled),
+    (select coalesce(jsonb_object_agg(coalesce(signup_source, '(direct)'), cnt), '{}'::jsonb)
+       from (select signup_source, count(*) cnt from households group by signup_source) s),
+    (select count(*)::int from feedback_submissions),
+    (select count(*)::int from feedback_submissions where created_at > now() - interval '30 days');
+end;
+$$;
+
+-- Deliberately excludes name/address/location/timezone — no product reason
+-- for a platform operator to see per-resident identifying details in
+-- aggregate, only the shape of how each household is configured.
+create or replace function platform_households_summary(p_limit integer default 200)
+returns table (
+  id                           uuid,
+  created_at                   timestamptz,
+  member_count                 integer,
+  modules_enabled              text[],
+  allow_member_cross_complete  boolean,
+  geofence_enabled             boolean,
+  signup_source                text
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not is_platform_admin() then raise exception 'not authorized'; end if;
+
+  return query
+    select h.id, h.created_at,
+           (select count(*)::int from profiles p where p.household_id = h.id),
+           enabled_modules(h.id), h.allow_member_cross_complete, h.geofence_enabled, h.signup_source
+    from households h
+    order by h.created_at desc
+    limit greatest(1, least(p_limit, 1000));
+end;
+$$;
+
+create or replace function platform_feedback(p_limit integer default 100)
+returns table (
+  id             uuid,
+  household_name text,
+  submitter_name text,
+  kind           text,
+  body           text,
+  metadata       jsonb,
+  created_at     timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not is_platform_admin() then raise exception 'not authorized'; end if;
+
+  return query
+    select f.id, h.name, p.full_name, f.kind, f.body, f.metadata, f.created_at
+    from feedback_submissions f
+    left join households h on h.id = f.household_id
+    left join profiles p on p.id = f.profile_id
+    order by f.created_at desc
+    limit greatest(1, least(p_limit, 500));
 end;
 $$;
