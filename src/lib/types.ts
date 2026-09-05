@@ -363,6 +363,19 @@ export type Database = {
       pass_turn: { Args: { p_turn: string; p_note?: string | null }; Returns: ChoreTurn };
       set_away: { Args: { p_until?: string | null }; Returns: MemberAwayRow };
       clear_away: { Args: Record<PropertyKey, never>; Returns: void };
+      admin_clear_away: { Args: { p_profile: string }; Returns: void };
+      get_away_abuse_flags: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          chore_id: string; chore_name: string; chore_emoji: string;
+          profile_id: string; profile_name: string; incident_count: number;
+        }[];
+      };
+      set_chore_away_override: {
+        Args: { p_chore: string; p_profile: string; p_enforce: boolean };
+        Returns: void;
+      };
+      dismiss_away_flag: { Args: { p_chore: string; p_profile: string }; Returns: void };
       append_turn: { Args: { p_chore: string; p_due?: string | null }; Returns: ChoreTurn };
       top_up_queue: { Args: { p_chore: string }; Returns: number };
       materialize_schedule: { Args: { p_chore: string }; Returns: number };

@@ -5,7 +5,9 @@ import {
   clearAiConfig, createInvite, createKioskDevice, removeMember,
   revokeInvite, setAiConfig, setCrossComplete, setGeofence, setGetAheadSettings,
   setHouseholdLocation, setMemberAdmin, setModule, type GetAheadSettingsInput,
+  adminClearAway, dismissAwayFlag, setChoreAwayOverride,
 } from '@/lib/household-actions';
+import type { AwayAbuseFlag, LongAwayMember } from '@/lib/data';
 import { Button, Card, Field, Initials, Input, Pill, Select, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
 import { formatInTimeZone } from '@/lib/timezone';
@@ -646,6 +648,107 @@ export function GetAheadSettings({ initial }: { initial: GetAheadSettingsInput }
         {pending ? 'Saving…' : saved ? 'Saved' : 'Save'}
       </Button>
     </Card>
+  );
+}
+
+/* ---------------------------------------------------------- away notices */
+
+export function AwayNotices({
+  flags, longAway, timeZone,
+}: {
+  flags: AwayAbuseFlag[];
+  longAway: LongAwayMember[];
+  timeZone: string;
+}) {
+  return (
+    <Card className="divide-y divide-[var(--border-subtle)]">
+      {longAway.map((m) => (
+        <LongAwayNotice key={m.profileId} member={m} timeZone={timeZone} />
+      ))}
+      {flags.map((f) => (
+        <AwayAbuseNotice key={`${f.choreId}-${f.profileId}`} flag={f} />
+      ))}
+    </Card>
+  );
+}
+
+function LongAwayNotice({ member, timeZone }: { member: LongAwayMember; timeZone: string }) {
+  const [pending, start] = useTransition();
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (done) return null;
+
+  return (
+    <div className="p-4 space-y-2">
+      <p className="t-body-md text-ink">
+        <strong>{member.fullName}</strong> has been away since{' '}
+        {formatInTimeZone(member.since, timeZone, { month: 'short', day: 'numeric' })} — still away?
+      </p>
+      {error && <p className="t-body-sm text-danger">{error}</p>}
+      <Button
+        size="sm"
+        tone="ghost"
+        disabled={pending}
+        onClick={() => {
+          setError(null);
+          start(async () => {
+            const res = await adminClearAway(member.profileId);
+            if (res.ok) setDone(true);
+            else setError(res.error);
+          });
+        }}
+      >
+        {pending ? 'Clearing…' : 'Clear their away status'}
+      </Button>
+    </div>
+  );
+}
+
+function AwayAbuseNotice({ flag }: { flag: AwayAbuseFlag }) {
+  const [pending, start] = useTransition();
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (done) return null;
+
+  return (
+    <div className="p-4 space-y-2">
+      <p className="t-body-md text-ink">
+        {flag.choreEmoji} We noticed <strong>{flag.profileName}</strong> might be a bum — away has
+        bypassed them on <strong>{flag.choreName}</strong> {flag.incidentCount} separate times.
+      </p>
+      {error && <p className="t-body-sm text-danger">{error}</p>}
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          disabled={pending}
+          onClick={() => {
+            setError(null);
+            start(async () => {
+              const res = await setChoreAwayOverride(flag.choreId, flag.profileId, true);
+              if (res.ok) setDone(true);
+              else setError(res.error);
+            });
+          }}
+        >
+          {pending ? 'Working…' : `Stop excusing ${flag.profileName.split(' ')[0]} from this`}
+        </Button>
+        <Button
+          size="sm"
+          tone="ghost"
+          disabled={pending}
+          onClick={() => {
+            setError(null);
+            start(async () => {
+              const res = await dismissAwayFlag(flag.choreId, flag.profileId);
+              if (res.ok) setDone(true);
+              else setError(res.error);
+            });
+          }}
+        >
+          Dismiss
+        </Button>
+      </div>
+    </div>
   );
 }
 

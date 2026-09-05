@@ -333,6 +333,67 @@ export async function getGetAheadSettings(
   };
 }
 
+/* ------------------------------------------------------------- away notices */
+
+export type AwayAbuseFlag = {
+  choreId: string;
+  choreName: string;
+  choreEmoji: string;
+  profileId: string;
+  profileName: string;
+  incidentCount: number;
+};
+
+/**
+ * Admin-only pattern detector: a chore/person pair where away has bypassed
+ * them, via distinct separate away periods, at least as many times as the
+ * household has members — see 0035_away_abuse_notice.sql. Not enforced
+ * automatically; this just surfaces it so an admin can decide.
+ */
+export async function getAwayAbuseFlags(): Promise<AwayAbuseFlag[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .rpc('get_away_abuse_flags')
+    .returns<{
+      chore_id: string; chore_name: string; chore_emoji: string;
+      profile_id: string; profile_name: string; incident_count: number;
+    }[]>();
+
+  return (data ?? []).map((row) => ({
+    choreId: row.chore_id,
+    choreName: row.chore_name,
+    choreEmoji: row.chore_emoji,
+    profileId: row.profile_id,
+    profileName: row.profile_name,
+    incidentCount: row.incident_count,
+  }));
+}
+
+export type LongAwayMember = { profileId: string; fullName: string; since: string };
+
+const LONG_AWAY_DAYS = 14;
+
+/**
+ * A single continuous away period is exactly what away is for, however long
+ * — this is just a "did you forget to clear this?" nudge for admins, not a
+ * flagged pattern. Unrelated to getAwayAbuseFlags above.
+ */
+export async function getLongAwayMembers(householdId: string): Promise<LongAwayMember[]> {
+  const supabase = await createClient();
+  const cutoff = new Date(Date.now() - LONG_AWAY_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await supabase
+    .from('member_away')
+    .select('profile_id, starts_at, profile:profiles!member_away_profile_id_fkey ( full_name )')
+    .eq('household_id', householdId)
+    .lte('starts_at', cutoff)
+    .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`)
+    .returns<{ profile_id: string; starts_at: string; profile: { full_name: string } | null }[]>();
+
+  return (data ?? [])
+    .filter((row) => row.profile)
+    .map((row) => ({ profileId: row.profile_id, fullName: row.profile!.full_name, since: row.starts_at }));
+}
+
 export async function getKioskDevices() {
   const supabase = await createClient();
   const { data } = await supabase

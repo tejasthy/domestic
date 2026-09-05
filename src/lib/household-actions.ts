@@ -297,3 +297,42 @@ export async function clearAiConfig(): Promise<ActionResult> {
   revalidatePath('/settings/household');
   return { ok: true };
 }
+
+/* -------------------------------------------------------- admin: away notices */
+
+export async function setChoreAwayOverride(
+  choreId: string,
+  profileId: string,
+  enforce: boolean,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('set_chore_away_override', {
+    p_chore: choreId,
+    p_profile: profileId,
+    p_enforce: enforce,
+  });
+  if (error) return fail(error, 'Could not change that.');
+  revalidatePath('/settings/household');
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+export async function dismissAwayFlag(choreId: string, profileId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('dismiss_away_flag', {
+    p_chore: choreId,
+    p_profile: profileId,
+  });
+  if (error) return fail(error, 'Could not dismiss that.');
+  revalidatePath('/settings/household');
+  return { ok: true };
+}
+
+export async function adminClearAway(profileId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('admin_clear_away', { p_profile: profileId });
+  if (error) return fail(error, 'Could not clear their away status.');
+  revalidatePath('/settings/household');
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}

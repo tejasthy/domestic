@@ -1,12 +1,16 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { getSession, getInvites, getKioskDevices, getGetAheadSettings } from '@/lib/data';
+import {
+  getSession, getInvites, getKioskDevices, getGetAheadSettings,
+  getAwayAbuseFlags, getLongAwayMembers,
+} from '@/lib/data';
 import { getAiConfigSummary } from '@/lib/household-actions';
 import { MODULES } from '@/lib/modules';
 import { Card, SectionHeader, Initials, Pill } from '@/components/ui';
 import {
   MemberRow, InviteList, NewInvite, ModuleToggles, CrossCompleteToggle,
   GeofenceToggle, GetAheadSettings, LocationSetting, KioskDevices, AiConfig,
+  AwayNotices,
 } from './admin';
 
 export const dynamic = 'force-dynamic';
@@ -49,11 +53,13 @@ export default async function HouseholdSettingsPage() {
     );
   }
 
-  const [invites, kiosks, aiConfig, getAheadSettings] = await Promise.all([
+  const [invites, kiosks, aiConfig, getAheadSettings, awayFlags, longAway] = await Promise.all([
     getInvites(),
     getKioskDevices(),
     getAiConfigSummary(),
     getGetAheadSettings(household.id, members.length),
+    getAwayAbuseFlags(),
+    getLongAwayMembers(household.id),
   ]);
   const openInvites = invites.filter(
     (i) =>
@@ -90,6 +96,13 @@ export default async function HouseholdSettingsPage() {
           ))}
         </Card>
       </section>
+
+      {(awayFlags.length > 0 || longAway.length > 0) && (
+        <section>
+          <SectionHeader title="Notices" />
+          <AwayNotices flags={awayFlags} longAway={longAway} timeZone={household.timezone} />
+        </section>
+      )}
 
       <section>
         <SectionHeader title="Invite someone" />
