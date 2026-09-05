@@ -12,8 +12,15 @@ import { bucketFor } from '@/lib/rotation';
 import { formatInTimeZone } from '@/lib/timezone';
 import type { TurnCard as Turn } from '@/lib/types';
 
-function dueLabel(turn: Turn, timeZone: string) {
-  if (turn.chore.cadence === 'standing') return { text: 'Your turn', tone: 'accent' as const };
+function dueLabel(turn: Turn, timeZone: string, mine: boolean) {
+  if (turn.chore.cadence === 'standing') {
+    // A standing turn's assignee is shown separately via the Initials badge
+    // when it's not the viewer's — this pill only ever answers "is it mine
+    // right now", so it must not say "Your turn" for anyone else's turn.
+    return mine
+      ? { text: 'Your turn', tone: 'accent' as const }
+      : { text: 'Up now', tone: 'accent' as const };
+  }
 
   const bucket = bucketFor(turn.due_at, timeZone);
   if (bucket === 'anytime') return { text: 'Whenever', tone: 'neutral' as const };
@@ -63,7 +70,7 @@ export function TurnRow({
   const [settled, setSettled] = useState<'done' | 'skipped' | 'passed' | null>(null);
   const [undone, setUndone] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const due = dueLabel(turn, timeZone);
+  const due = dueLabel(turn, timeZone, mine);
   const canComplete = mine || crossComplete;
   const ownTurn = isOwnTurn ?? mine;
   // Get-ahead only makes sense before it's your turn (it trades places with

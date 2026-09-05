@@ -153,7 +153,11 @@ export default async function KioskPage({
                         }
                       >
                         {flagged ? 'Flagged'
-                          : standing ? 'Your turn'
+                          // The kiosk is a shared, no-viewer display — the
+                          // assignee's name is already shown below the tile,
+                          // so this never says "Your turn" the way the app's
+                          // own per-viewer card can.
+                          : standing ? 'Up now'
                           : bucket === 'overdue' ? 'Overdue'
                           : bucket === 'today' ? 'Today'
                           : 'Whenever'}
