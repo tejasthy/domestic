@@ -281,23 +281,24 @@ export async function getInvites(): Promise<HouseholdInvite[]> {
 export type GetAheadSettings = {
   enabled: boolean;
   getAhead: { maxPer30d: number };
-  defer: { maxPer30d: number };
+  defer: { maxPer30d: number; maxChain: number };
 };
 
 const GET_AHEAD_DEFAULTS: GetAheadSettings = {
   enabled: true,
   getAhead: { maxPer30d: 1 },
-  defer: { maxPer30d: 1 },
+  defer: { maxPer30d: 1, maxChain: 3 },
 };
 
 /**
  * No row for this household means the feature is on with the defaults — the
  * same fallback get_ahead()/defer_turn() apply server-side, kept in sync here
  * so the settings screen and button-disabled states agree with the RPCs.
- * Both directions are queue-position swaps (not completing/pushing a due
- * date), so a plain rolling-30-day use count per direction is the only limit
- * that has meaning — get_ahead's own "it's already your turn" guard is what
- * keeps a single direction from being reused back-to-back on the same chore.
+ * defer.maxChain caps how many times a single turn can be handed off in a
+ * row (a defer chain can otherwise cascade through the whole rotation and
+ * back, forever) — everything else is a plain rolling-30-day use count per
+ * person, since both directions are queue-position swaps, not
+ * completing/pushing a due date.
  */
 export async function getGetAheadSettings(householdId: string): Promise<GetAheadSettings> {
   const supabase = await createClient();
@@ -312,7 +313,7 @@ export async function getGetAheadSettings(householdId: string): Promise<GetAhead
 
   const settings = (data.settings ?? {}) as {
     get_ahead?: { max_per_30d?: number };
-    defer?: { max_per_30d?: number };
+    defer?: { max_per_30d?: number; max_chain?: number };
   };
 
   return {
@@ -322,6 +323,7 @@ export async function getGetAheadSettings(householdId: string): Promise<GetAhead
     },
     defer: {
       maxPer30d: settings.defer?.max_per_30d ?? GET_AHEAD_DEFAULTS.defer.maxPer30d,
+      maxChain: settings.defer?.max_chain ?? GET_AHEAD_DEFAULTS.defer.maxChain,
     },
   };
 }

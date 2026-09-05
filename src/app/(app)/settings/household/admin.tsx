@@ -612,7 +612,19 @@ export function GetAheadSettings({ initial }: { initial: GetAheadSettingsInput }
             min={1}
             max={30}
             value={settings.defer.maxPer30d}
-            onChange={(e) => set({ defer: { maxPer30d: Number(e.target.value) } })}
+            onChange={(e) => set({ defer: { ...settings.defer, maxPer30d: Number(e.target.value) } })}
+          />
+        </Field>
+        <Field
+          label="Max defers per turn"
+          hint="Caps how many times one turn can be handed off before someone has to take it, pass it, or skip it."
+        >
+          <Input
+            type="number"
+            min={1}
+            max={20}
+            value={settings.defer.maxChain}
+            onChange={(e) => set({ defer: { ...settings.defer, maxChain: Number(e.target.value) } })}
           />
         </Field>
       </div>
