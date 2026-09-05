@@ -18,6 +18,10 @@ select '77777777-1111-1111-1111-111111111111', id,
        case initials when 'OP' then 0 else 1 end
 from profiles where household_id = '77777777-7777-7777-7777-777777777777';
 
+-- OP is the household admin — pass_turn/skip_turn are admin-only (0033).
+update profiles set is_admin = true
+ where household_id = '77777777-7777-7777-7777-777777777777' and initials = 'OP';
+
 -- --------------------------------------------------------------- top-up
 
 do $$

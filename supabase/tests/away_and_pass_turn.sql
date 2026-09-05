@@ -268,8 +268,9 @@ end $$;
 
 -- --------------------------------------------------- admin-only cross-pass
 
--- pass_turn refuses a non-admin acting for someone else (0033: this used to
--- be gated by allow_member_cross_complete; it now requires a household admin).
+-- pass_turn refuses a non-admin, period (0033: this used to be gated by
+-- allow_member_cross_complete only for someone else's turn; it is now
+-- admin-only across the board).
 select set_config('request.user_id', '66666666-0000-0000-0000-000000000003', false);
 
 do $$
@@ -285,10 +286,35 @@ begin
     perform pass_turn(tp_turn);
     raise exception 'FAIL: pass_turn should refuse a non-admin acting for another member';
   exception when others then
-    if sqlerrm not like '%only an admin can pass this for someone else%' then raise; end if;
+    if sqlerrm not like '%only an admin can pass a turn%' then raise; end if;
   end;
 end $$;
 \echo '  ok  pass_turn refuses a non-admin acting for another member'
+
+-- pass_turn refuses a non-admin acting on their *own* turn too (0033's point:
+-- admin-only regardless of whose turn it is). 3P is not an admin.
+do $$
+declare own_turn uuid;
+begin
+  insert into chore_turns (id, chore_id, household_id, turn_number, assignee_id, status, due_at)
+  values (gen_random_uuid(), '66666666-1111-1111-1111-111111111111',
+          '66666666-6666-6666-6666-666666666666', 301,
+          '66666666-0000-0000-0000-000000000003', 'pending', now() + interval '1 day')
+  returning id into own_turn;
+
+  begin
+    perform pass_turn(own_turn);
+    raise exception 'FAIL: pass_turn should refuse a non-admin even for their own turn';
+  exception when others then
+    if sqlerrm not like '%only an admin can pass a turn%' then raise; end if;
+  end;
+
+  if (select status from chore_turns where id = own_turn) <> 'pending'
+     or (select assignee_id from chore_turns where id = own_turn) <> '66666666-0000-0000-0000-000000000003' then
+    raise exception 'FAIL: the rejected pass must not have changed the turn';
+  end if;
+end $$;
+\echo '  ok  pass_turn refuses a non-admin acting on their own turn'
 
 -- An admin can pass someone else's turn.
 select set_config('request.user_id', '66666666-0000-0000-0000-000000000001', false);

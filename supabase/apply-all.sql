@@ -6156,11 +6156,10 @@ $$;
 --    to standing's usual single pending turn as each one is completed —
 --    exactly "reshuffling the queue," the same as the other two cadences.
 --
--- 3. pass_turn/skip_turn on someone else's turn now requires the actor to
---    be a household admin, not just allow_member_cross_complete — passing
---    or skipping affects someone else's rotation credit/fairness in a way
---    completing a chore for them doesn't, so it gets a stricter gate.
---    Acting on your *own* turn is unaffected either way.
+-- 3. pass_turn/skip_turn are now admin-only, full stop — including a member
+--    acting on their *own* turn. Unlike completing a chore (which is just
+--    doing the work), passing or skipping changes rotation credit/fairness
+--    for everyone downstream, so only a household admin can trigger either.
 
 alter table chores
   add column if not exists allow_get_ahead boolean not null default true,
@@ -6460,11 +6459,10 @@ $$;
 
 /* ----------------------------------------------------- admin-only pass/skip */
 
--- Acting on your own turn is unaffected. Acting on someone else's now
--- requires being a household admin, replacing the allow_member_cross_complete
--- check that used to gate this the same as complete_turn — passing or
--- skipping affects someone else's rotation fairness, unlike completing a
--- chore for them.
+-- Passing or skipping is admin-only regardless of whose turn it is —
+-- replacing the allow_member_cross_complete check that used to gate this the
+-- same as complete_turn. Passing/skipping affects rotation fairness in a way
+-- completing a chore never does, even when it's your own turn.
 create or replace function skip_turn(p_turn uuid, p_note text default null)
 returns chore_turns
 language plpgsql
@@ -6487,10 +6485,8 @@ begin
     raise exception 'that turn is not pending';
   end if;
 
-  if me is distinct from t.assignee_id then
-    if not is_household_admin() then
-      raise exception 'only an admin can skip this for someone else';
-    end if;
+  if not is_household_admin() then
+    raise exception 'only an admin can skip a turn';
   end if;
 
   update chore_turns
@@ -6543,10 +6539,8 @@ begin
   if not is_household_member(t.household_id) then raise exception 'not your household'; end if;
   if t.status <> 'pending' then raise exception 'that turn is not pending'; end if;
 
-  if me is distinct from t.assignee_id then
-    if not is_household_admin() then
-      raise exception 'only an admin can pass this for someone else';
-    end if;
+  if not is_household_admin() then
+    raise exception 'only an admin can pass a turn';
   end if;
 
   select count(*) into n from chore_rotation where chore_id = t.chore_id;

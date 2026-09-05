@@ -121,6 +121,7 @@ export default async function ChoresPage() {
                   <TurnRow
                     turn={turn}
                     mine={turn.assignee_id === me.id}
+                    isAdmin={me.is_admin}
                     timeZone={household.timezone}
                     className="border-0 shadow-none bg-transparent p-0"
                     geofenceEnabled={household.geofence_enabled}

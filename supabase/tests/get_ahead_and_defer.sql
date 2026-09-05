@@ -63,6 +63,11 @@ select '2b3b2b3b-4444-4444-4444-444444444444', id,
 from profiles
 where household_id = '2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b' and initials in ('OP','TP');
 
+-- OP is the household admin — pass_turn is admin-only (0033), needed below to
+-- cycle a turn off TP without that being what the test is actually about.
+update profiles set is_admin = true
+ where household_id = '2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b' and initials = 'OP';
+
 select top_up_queue('2b3b2b3b-1111-1111-1111-111111111111');
 select materialize_schedule('2b3b2b3b-2222-2222-2222-222222222222');
 select top_up_queue('2b3b2b3b-3333-3333-3333-333333333333');
@@ -118,15 +123,19 @@ begin
 end $$;
 \echo '  ok  get_ahead refuses when it is already the caller''s turn'
 
--- Default limit: 1 use per rolling 30 days — tested by having someone else
--- cycle the current turn away from TP first (pass_turn), so TP is free to
--- attempt get_ahead again without tripping the self-limiting guard above.
+-- Default limit: 1 use per rolling 30 days.
 do $$
 declare current_turn_id uuid;
 begin
   select id into current_turn_id from chore_turns
   where chore_id = '2b3b2b3b-1111-1111-1111-111111111111' and turn_number = 0;
+
+  -- Cycle the turn off TP (pass_turn is admin-only since 0033, so this runs
+  -- as OP) so TP is free to attempt get_ahead again without tripping the
+  -- self-limiting guard above.
+  perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000001', false);
   perform pass_turn(current_turn_id); -- TP -> 3P (next in rotation order)
+  perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000002', false);
 
   begin
     perform get_ahead('2b3b2b3b-1111-1111-1111-111111111111');
