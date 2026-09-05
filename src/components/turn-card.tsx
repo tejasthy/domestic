@@ -66,8 +66,11 @@ export function TurnRow({
   const due = dueLabel(turn, timeZone);
   const canComplete = mine || crossComplete;
   const ownTurn = isOwnTurn ?? mine;
-  const canGetAhead = ownTurn && getAheadEnabled && turn.chore.cadence !== 'standing';
-  const canDefer = ownTurn && getAheadEnabled && turn.chore.cadence !== 'standing' && turn.due_at != null;
+  // Get-ahead only makes sense before it's your turn (it trades places with
+  // whoever currently holds it); defer only makes sense once it is (it hands
+  // your current turn to the next person and takes their upcoming one).
+  const canGetAhead = ownTurn && !mine && getAheadEnabled && turn.chore.cadence !== 'standing';
+  const canDefer = mine && getAheadEnabled && turn.chore.cadence !== 'standing';
   const flaggedStanding = turn.chore.cadence === 'standing' && turn.flagged_at != null;
 
   function onComplete() {
@@ -241,7 +244,7 @@ export function TurnRow({
             onClick={onGetAhead}
             disabled={pending}
             aria-label={`Get ahead on ${turn.chore.name}`}
-            title="Get ahead — do your next turn early"
+            title="Get ahead — trade places with whoever's up now"
             className="w-11 h-11 grid place-items-center rounded-md text-ink-muted hover:bg-hover active:bg-sunken disabled:opacity-50"
           >
             <Icon.FastForward size={18} />
@@ -253,7 +256,7 @@ export function TurnRow({
             onClick={onDefer}
             disabled={pending}
             aria-label={`Defer ${turn.chore.name} to later`}
-            title="Defer — push this turn's due date back"
+            title="Defer — trade places with whoever's next"
             className="w-11 h-11 grid place-items-center rounded-md text-ink-muted hover:bg-hover active:bg-sunken disabled:opacity-50"
           >
             <Icon.Clock size={18} />
@@ -325,7 +328,7 @@ export function GetAheadChip({ choreId, choreName }: { choreId: string; choreNam
   const [error, setError] = useState<string | null>(null);
 
   if (done) {
-    return <p className="t-body-sm text-ink-muted px-4 py-2">Got it — done ahead of schedule.</p>;
+    return <p className="t-body-sm text-ink-muted px-4 py-2">Traded places — you&rsquo;re up now.</p>;
   }
 
   return (

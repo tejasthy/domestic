@@ -597,40 +597,22 @@ export function GetAheadSettings({ initial }: { initial: GetAheadSettingsInput }
       </label>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Turns ahead" hint="Max turns done early at once.">
-          <Input
-            type="number"
-            min={1}
-            max={10}
-            value={settings.getAhead.maxAhead}
-            onChange={(e) => set({ getAhead: { ...settings.getAhead, maxAhead: Number(e.target.value) } })}
-          />
-        </Field>
-        <Field label="Uses / 30 days" hint="How often it can be used.">
+        <Field label="Get-ahead uses / 30 days" hint="Trades places with whoever's currently up.">
           <Input
             type="number"
             min={1}
             max={30}
             value={settings.getAhead.maxPer30d}
-            onChange={(e) => set({ getAhead: { ...settings.getAhead, maxPer30d: Number(e.target.value) } })}
+            onChange={(e) => set({ getAhead: { maxPer30d: Number(e.target.value) } })}
           />
         </Field>
-        <Field label="Defers per turn" hint="Max times one turn is pushed.">
-          <Input
-            type="number"
-            min={1}
-            max={10}
-            value={settings.defer.maxAhead}
-            onChange={(e) => set({ defer: { ...settings.defer, maxAhead: Number(e.target.value) } })}
-          />
-        </Field>
-        <Field label="Uses / 30 days" hint="How often it can be used.">
+        <Field label="Defer uses / 30 days" hint="Trades places with whoever's next.">
           <Input
             type="number"
             min={1}
             max={30}
             value={settings.defer.maxPer30d}
-            onChange={(e) => set({ defer: { ...settings.defer, maxPer30d: Number(e.target.value) } })}
+            onChange={(e) => set({ defer: { maxPer30d: Number(e.target.value) } })}
           />
         </Field>
       </div>

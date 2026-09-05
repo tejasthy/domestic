@@ -280,20 +280,24 @@ export async function getInvites(): Promise<HouseholdInvite[]> {
 
 export type GetAheadSettings = {
   enabled: boolean;
-  getAhead: { maxAhead: number; maxPer30d: number };
-  defer: { maxAhead: number; maxPer30d: number };
+  getAhead: { maxPer30d: number };
+  defer: { maxPer30d: number };
 };
 
 const GET_AHEAD_DEFAULTS: GetAheadSettings = {
   enabled: true,
-  getAhead: { maxAhead: 2, maxPer30d: 1 },
-  defer: { maxAhead: 2, maxPer30d: 1 },
+  getAhead: { maxPer30d: 1 },
+  defer: { maxPer30d: 1 },
 };
 
 /**
  * No row for this household means the feature is on with the defaults — the
  * same fallback get_ahead()/defer_turn() apply server-side, kept in sync here
  * so the settings screen and button-disabled states agree with the RPCs.
+ * Both directions are queue-position swaps (not completing/pushing a due
+ * date), so a plain rolling-30-day use count per direction is the only limit
+ * that has meaning — get_ahead's own "it's already your turn" guard is what
+ * keeps a single direction from being reused back-to-back on the same chore.
  */
 export async function getGetAheadSettings(householdId: string): Promise<GetAheadSettings> {
   const supabase = await createClient();
@@ -307,18 +311,16 @@ export async function getGetAheadSettings(householdId: string): Promise<GetAhead
   if (!data) return GET_AHEAD_DEFAULTS;
 
   const settings = (data.settings ?? {}) as {
-    get_ahead?: { max_ahead?: number; max_per_30d?: number };
-    defer?: { max_ahead?: number; max_per_30d?: number };
+    get_ahead?: { max_per_30d?: number };
+    defer?: { max_per_30d?: number };
   };
 
   return {
     enabled: data.enabled ?? true,
     getAhead: {
-      maxAhead: settings.get_ahead?.max_ahead ?? GET_AHEAD_DEFAULTS.getAhead.maxAhead,
       maxPer30d: settings.get_ahead?.max_per_30d ?? GET_AHEAD_DEFAULTS.getAhead.maxPer30d,
     },
     defer: {
-      maxAhead: settings.defer?.max_ahead ?? GET_AHEAD_DEFAULTS.defer.maxAhead,
       maxPer30d: settings.defer?.max_per_30d ?? GET_AHEAD_DEFAULTS.defer.maxPer30d,
     },
   };

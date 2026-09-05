@@ -168,8 +168,8 @@ export async function setCrossComplete(enabled: boolean): Promise<ActionResult> 
 
 export type GetAheadSettingsInput = {
   enabled: boolean;
-  getAhead: { maxAhead: number; maxPer30d: number };
-  defer: { maxAhead: number; maxPer30d: number };
+  getAhead: { maxPer30d: number };
+  defer: { maxPer30d: number };
 };
 
 export async function setGetAheadSettings(input: GetAheadSettingsInput): Promise<ActionResult> {
@@ -178,8 +178,8 @@ export async function setGetAheadSettings(input: GetAheadSettingsInput): Promise
     p_module: 'get_ahead',
     p_enabled: input.enabled,
     p_settings: {
-      get_ahead: { max_ahead: input.getAhead.maxAhead, max_per_30d: input.getAhead.maxPer30d },
-      defer: { max_ahead: input.defer.maxAhead, max_per_30d: input.defer.maxPer30d },
+      get_ahead: { max_per_30d: input.getAhead.maxPer30d },
+      defer: { max_per_30d: input.defer.maxPer30d },
     },
   });
   if (error) return fail(error, 'Could not save those limits.');
