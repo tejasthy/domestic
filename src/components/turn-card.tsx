@@ -3,14 +3,14 @@
 import { useState, useTransition } from 'react';
 import {
   completeTurn, skipTurn, passTurn, undoTurn, flagChore, respondToSwap,
-  getAhead, deferTurn, flagTurn, clearFlag,
+  getAhead, deferTurn,
 } from '@/lib/actions';
 import { getCurrentPosition } from '@/lib/geolocation';
 import { Button, Card, Initials, Pill, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
 import { bucketFor } from '@/lib/rotation';
 import { formatInTimeZone } from '@/lib/timezone';
-import type { Profile, TurnCard as Turn } from '@/lib/types';
+import type { TurnCard as Turn } from '@/lib/types';
 
 function dueLabel(turn: Turn, timeZone: string) {
   if (turn.chore.cadence === 'standing') return { text: 'Your turn', tone: 'accent' as const };
@@ -35,7 +35,6 @@ export function TurnRow({
   crossComplete = false,
   timeZone,
   className,
-  members = [],
   geofenceEnabled = false,
   getAheadEnabled = false,
 }: {
@@ -45,8 +44,6 @@ export function TurnRow({
   crossComplete?: boolean;
   timeZone: string;
   className?: string;
-  /** Other household members, for the "flag for someone" picker. */
-  members?: Pick<Profile, 'id' | 'full_name' | 'initials' | 'color'>[];
   /** Household setting: completion must happen within a radius of home. */
   geofenceEnabled?: boolean;
   /** Household setting: get-ahead/defer is turned on. */
@@ -56,13 +53,11 @@ export function TurnRow({
   const [settled, setSettled] = useState<'done' | 'skipped' | 'passed' | null>(null);
   const [undone, setUndone] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [flagPicker, setFlagPicker] = useState(false);
   const due = dueLabel(turn, timeZone);
   const canComplete = mine || crossComplete;
   const canGetAhead = mine && getAheadEnabled && turn.chore.cadence !== 'standing';
   const canDefer = mine && getAheadEnabled && turn.chore.cadence !== 'standing' && turn.due_at != null;
-  const canClearFlag = turn.flagged_for != null
-    && (mine || turn.flagged_by === turn.assignee_id || turn.flagged_for === turn.assignee_id);
+  const flaggedStanding = turn.chore.cadence === 'standing' && turn.flagged_at != null;
 
   function onComplete() {
     setError(null);
@@ -112,23 +107,6 @@ export function TurnRow({
     setError(null);
     start(async () => {
       const res = await deferTurn(turn.id);
-      if (!res.ok) setError(res.error);
-    });
-  }
-
-  function onFlag(targetId: string) {
-    setError(null);
-    setFlagPicker(false);
-    start(async () => {
-      const res = await flagTurn(turn.id, targetId);
-      if (!res.ok) setError(res.error);
-    });
-  }
-
-  function onClearFlag() {
-    setError(null);
-    start(async () => {
-      const res = await clearFlag(turn.id);
       if (!res.ok) setError(res.error);
     });
   }
@@ -215,10 +193,8 @@ export function TurnRow({
     );
   }
 
-  const flaggable = members.filter((m) => m.id !== turn.assignee_id);
-
   return (
-    <Card className={cx('p-4', turn.flagged_for != null && 'border-l-2 border-l-maize bg-maize/[0.04]', className)}>
+    <Card className={cx('p-4', flaggedStanding && 'border-l-2 border-l-maize bg-maize/[0.04]', className)}>
       <div className="flex items-start gap-3">
         <span className="text-2xl w-9 text-center shrink-0" aria-hidden>
           {turn.chore.emoji}
@@ -238,48 +214,16 @@ export function TurnRow({
                 {turn.assignee.full_name.split(' ')[0]}
               </span>
             )}
-            {turn.flagged_for != null && turn.flagged && (
+            {flaggedStanding && (
               <Pill tone="accent">
-                <Icon.Flag size={12} /> for {turn.flagged.full_name.split(' ')[0]}
+                <Icon.Flag size={12} /> Flagged
               </Pill>
             )}
           </div>
-          {turn.flag_note && (
-            <p className="t-body-sm text-ink-muted mt-1">&ldquo;{turn.flag_note}&rdquo;</p>
-          )}
         </div>
       </div>
 
-      <div className="flex items-center flex-wrap gap-2 mt-3.5 pt-3.5 border-t border-subtle">
-        {flaggable.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setFlagPicker((v) => !v)}
-            disabled={pending}
-            aria-label={`Flag ${turn.chore.name} for a housemate`}
-            aria-pressed={flagPicker}
-            title="Flag — nudge a specific person, without changing whose turn it is"
-            className={cx(
-              'w-11 h-11 grid place-items-center rounded-md hover:bg-hover active:bg-sunken disabled:opacity-50',
-              flagPicker ? 'text-accent bg-maize/12' : 'text-ink-muted',
-            )}
-          >
-            <Icon.Flag size={18} />
-          </button>
-        )}
-        {canClearFlag && (
-          <button
-            type="button"
-            onClick={onClearFlag}
-            disabled={pending}
-            className="t-body-sm font-medium text-accent shrink-0 disabled:opacity-50"
-          >
-            Clear flag
-          </button>
-        )}
-
-        <div className="flex-1" />
-
+      <div className="flex items-center justify-end gap-2 mt-3.5 pt-3.5 border-t border-subtle">
         {canGetAhead && (
           <button
             type="button"
@@ -351,25 +295,6 @@ export function TurnRow({
           </>
         )}
       </div>
-
-      {flagPicker && (
-        <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-subtle">
-          <span className="t-body-sm text-ink-muted">Flag for:</span>
-          {flaggable.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => onFlag(m.id)}
-              disabled={pending}
-              aria-label={`Flag for ${m.full_name}`}
-              className="flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-pill border border-line bg-card hover:bg-hover disabled:opacity-50"
-            >
-              <Initials initials={m.initials} color={m.color} size="sm" />
-              <span className="t-body-sm text-ink">{m.full_name.split(' ')[0]}</span>
-            </button>
-          ))}
-        </div>
-      )}
 
       {error && <p className="t-body-sm text-danger mt-2">{error}</p>}
     </Card>

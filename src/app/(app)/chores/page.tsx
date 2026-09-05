@@ -112,7 +112,6 @@ export default async function ChoresPage() {
                     mine={turn.assignee_id === me.id}
                     timeZone={household.timezone}
                     className="border-0 shadow-none bg-transparent p-0"
-                    members={members}
                     geofenceEnabled={household.geofence_enabled}
                     getAheadEnabled={getAheadSettings.enabled}
                   />

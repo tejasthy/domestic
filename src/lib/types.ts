@@ -92,10 +92,11 @@ export type ChoreTurn = {
   completed_by: string | null;
   note: string | null;
   created_at: string;
-  flagged_for: string | null;
-  flagged_by: string | null;
+  /** Set by flag_on_demand/kiosk_flag_chore for a standing chore — the
+   * due_at-stamping those functions do for on_demand doesn't apply here,
+   * since a standing turn is already always visible. Never cleared on
+   * completion; the next turn a top-up creates starts fresh. */
   flagged_at: string | null;
-  flag_note: string | null;
   completion_distance_m: number | null;
   completion_within_geofence: boolean | null;
 };
@@ -370,11 +371,6 @@ export type Database = {
       skip_turn: { Args: { p_turn: string; p_note?: string | null }; Returns: ChoreTurn };
       undo_turn: { Args: { p_turn: string }; Returns: ChoreTurn };
       flag_on_demand: { Args: { p_chore: string }; Returns: ChoreTurn };
-      flag_turn: {
-        Args: { p_turn: string; p_target: string; p_message?: string | null };
-        Returns: ChoreTurn;
-      };
-      clear_flag: { Args: { p_turn: string }; Returns: ChoreTurn };
       get_ahead: { Args: { p_chore: string }; Returns: ChoreTurn };
       defer_turn: { Args: { p_turn: string }; Returns: ChoreTurn };
       haversine_meters: {
@@ -653,6 +649,4 @@ export type TurnCard = ChoreTurn & {
     'id' | 'name' | 'emoji' | 'cadence' | 'description' | 'days_of_week' | 'interval_weeks'
   >;
   assignee: Pick<Profile, 'id' | 'full_name' | 'initials' | 'color'>;
-  flagger: Pick<Profile, 'id' | 'full_name' | 'initials' | 'color'> | null;
-  flagged: Pick<Profile, 'id' | 'full_name' | 'initials' | 'color'> | null;
 };

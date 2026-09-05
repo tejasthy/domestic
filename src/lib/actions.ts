@@ -223,50 +223,11 @@ export async function deferTurn(turnId: string): Promise<ActionResult> {
   return { ok: true };
 }
 
-/** Points a visible nudge at a specific housemate — a reminder, not a
- * reassignment; the rotation's actual assignee never changes. */
-export async function flagTurn(
-  turnId: string,
-  targetProfileId: string,
-  message?: string,
-): Promise<ActionResult> {
-  const supabase = await createClient();
-
-  const { data: chore } = await supabase
-    .from('chore_turns')
-    .select('chore:chores(name, emoji)')
-    .eq('id', turnId)
-    .single<{ chore: { name: string; emoji: string } }>();
-
-  const { error } = await supabase.rpc('flag_turn', {
-    p_turn: turnId,
-    p_target: targetProfileId,
-    p_message: message ?? null,
-  });
-  if (error) return { ok: false, error: error.message };
-
-  if (chore) {
-    await notifyProfiles([targetProfileId], {
-      title: `${chore.chore.emoji} Someone flagged ${chore.chore.name} for you`,
-      body: message ?? 'Check your to-do list.',
-      url: '/home',
-      tag: `chore-flag-${turnId}`,
-    });
-  }
-
-  revalidatePath('/', 'layout');
-  return { ok: true };
-}
-
-export async function clearFlag(turnId: string): Promise<ActionResult> {
-  const supabase = await createClient();
-  const { error } = await supabase.rpc('clear_flag', { p_turn: turnId });
-  if (error) return { ok: false, error: error.message };
-  revalidatePath('/', 'layout');
-  return { ok: true };
-}
-
-/** "The dishwasher is full" / "the trash needs to go out." */
+/** "The dishwasher is full" / "the trash needs to go out" / "recycling needs
+ * doing" — chore-wide, not aimed at a specific person: it always resolves to
+ * whoever the rotation currently has up. Works for on_demand (surfaces a
+ * queued turn by stamping a due date) and standing (the turn is already
+ * visible; this just marks it flagged and notifies whoever holds it). */
 export async function flagChore(choreId: string): Promise<ActionResult> {
   const supabase = await createClient();
 
@@ -284,7 +245,7 @@ export async function flagChore(choreId: string): Promise<ActionResult> {
   if (data?.assignee_id && chore) {
     await notifyProfiles([data.assignee_id], {
       title: `${chore.emoji} ${chore.name} — you're up`,
-      body: 'Someone flagged it as ready.',
+      body: 'Someone flagged it for you.',
       url: '/home',
       tag: `chore-${choreId}`,
     });

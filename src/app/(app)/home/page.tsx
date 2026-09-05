@@ -60,7 +60,7 @@ export default async function TodayPage() {
   const theirs = turns.filter((t) => t.assignee_id !== me.id);
   const getAheadEnabled = getAheadSettings?.enabled ?? true;
 
-  const onDemand = chores.filter((c) => c.cadence === 'on_demand');
+  const flaggable = chores.filter((c) => c.cadence === 'on_demand' || c.cadence === 'standing');
   const upNextByChore = new Map(upNext.map((t) => [t.chore_id, t]));
   const myBalance = balances[me.id] ?? 0;
 
@@ -110,24 +110,28 @@ export default async function TodayPage() {
         ) : (
           <div className="space-y-3">
             {mineNow.map((t) => (
-              <TurnRow key={t.id} turn={t} mine crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} members={members} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
+              <TurnRow key={t.id} turn={t} mine crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
             ))}
           </div>
         )}
       </section>
       )}
 
-      {onDemand.length > 0 && (
+      {flaggable.length > 0 && (
         <section>
           <SectionHeader title="Flag something" />
           <div className="grid grid-cols-2 gap-2">
-            {onDemand.map((c) => (
+            {flaggable.map((c) => (
               <FlagButton
                 key={c.id}
                 choreId={c.id}
                 emoji={c.emoji}
                 label={c.description ?? c.name}
-                flagged={upNextByChore.get(c.id)?.due_at != null}
+                flagged={
+                  c.cadence === 'standing'
+                    ? upNextByChore.get(c.id)?.flagged_at != null
+                    : upNextByChore.get(c.id)?.due_at != null
+                }
               />
             ))}
           </div>
@@ -146,7 +150,7 @@ export default async function TodayPage() {
           />
           <div className="space-y-3">
             {theirs.slice(0, 6).map((t) => (
-              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} members={members} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
+              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
             ))}
           </div>
         </section>
@@ -157,7 +161,7 @@ export default async function TodayPage() {
           <SectionHeader title="Coming up for you" />
           <div className="space-y-3">
             {mineLater.map((t) => (
-              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} members={members} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
+              <TurnRow key={t.id} turn={t} mine={false} crossComplete={household.allow_member_cross_complete} timeZone={household.timezone} geofenceEnabled={household.geofence_enabled} getAheadEnabled={getAheadEnabled} />
             ))}
           </div>
         </section>

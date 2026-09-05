@@ -10,13 +10,10 @@ import { DEFAULT_MODULES, type ModuleKey } from '@/lib/modules';
 
 const TURN_SELECT = `
   id, chore_id, household_id, turn_number, assignee_id, status,
-  due_at, completed_at, completed_by, note, created_at,
-  flagged_for, flagged_by, flagged_at, flag_note,
+  due_at, completed_at, completed_by, note, created_at, flagged_at,
   completion_distance_m, completion_within_geofence,
   chore:chores!inner ( id, name, emoji, cadence, description, days_of_week, interval_weeks ),
-  assignee:profiles!chore_turns_assignee_id_fkey ( id, full_name, initials, color ),
-  flagger:profiles!chore_turns_flagged_by_fkey ( id, full_name, initials, color ),
-  flagged:profiles!chore_turns_flagged_for_fkey ( id, full_name, initials, color )
+  assignee:profiles!chore_turns_assignee_id_fkey ( id, full_name, initials, color )
 `;
 
 /** Current user's profile plus everyone they live with. Cached per request. */
