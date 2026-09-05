@@ -21,6 +21,7 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** "Sun & Fri, every week" / "Sat, every other week" / "Whenever it's full" */
 export function describeCadence(chore: Pick<Chore, 'cadence' | 'days_of_week' | 'interval_weeks' | 'description'>): string {
+  if (chore.cadence === 'standing') return chore.description ?? 'Passed along when done';
   if (chore.cadence === 'on_demand') return chore.description ?? 'As needed';
 
   const days = [...chore.days_of_week].sort((a, b) => a - b).map((d) => DAY_NAMES[d]);

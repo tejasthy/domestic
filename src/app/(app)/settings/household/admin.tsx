@@ -3,9 +3,11 @@
 import { useState, useTransition } from 'react';
 import {
   clearAiConfig, createInvite, createKioskDevice, removeMember,
-  revokeInvite, setAiConfig, setCrossComplete, setHouseholdLocation,
-  setMemberAdmin, setModule,
+  revokeInvite, setAiConfig, setCrossComplete, setGeofence, setGetAheadSettings,
+  setHouseholdLocation, setMemberAdmin, setModule, type GetAheadSettingsInput,
+  adminClearAway, dismissAwayFlag, setChoreAwayOverride,
 } from '@/lib/household-actions';
+import type { AwayAbuseFlag, LongAwayMember } from '@/lib/data';
 import { Button, Card, Field, Initials, Input, Pill, Select, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
 import { formatInTimeZone } from '@/lib/timezone';
@@ -474,6 +476,282 @@ export function CrossCompleteToggle({ enabled }: { enabled: boolean }) {
   );
 }
 
+/* --------------------------------------------------------------- geofence */
+
+export function GeofenceToggle({
+  enabled,
+  radiusMeters,
+  hasLocation,
+}: {
+  enabled: boolean;
+  radiusMeters: number;
+  hasLocation: boolean;
+}) {
+  const [pending, start] = useTransition();
+  const [on, setOn] = useState(enabled);
+  const [radius, setRadius] = useState(radiusMeters);
+  const [error, setError] = useState<string | null>(null);
+
+  function save(nextOn: boolean, nextRadius: number) {
+    setError(null);
+    start(async () => {
+      const res = await setGeofence(nextOn, nextRadius);
+      if (!res.ok) {
+        setOn(enabled);
+        setRadius(radiusMeters);
+        setError(res.error);
+      }
+    });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        disabled={pending || !hasLocation}
+        onClick={() => {
+          const next = !on;
+          setOn(next);
+          save(next, radius);
+        }}
+        className="w-full flex items-start gap-3 px-4 py-3.5 text-left rounded-lg border border-line bg-card hover:bg-hover transition-colors duration-[120ms] disabled:opacity-50"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="t-title-md text-ink block">Require members to be nearby</span>
+          <span className="t-body-sm text-ink-muted block mt-0.5">
+            {hasLocation
+              ? "Completing a chore from a phone requires being within range of the house address. The kiosk is exempt — it's fixed at home."
+              : "This house has no address or location on file yet, so there's nothing to measure distance from."}
+          </span>
+        </span>
+        <span
+          className={cx(
+            'w-11 h-6 rounded-pill shrink-0 mt-0.5 relative transition-colors duration-[180ms]',
+            on ? 'bg-blue dark:bg-maize' : 'bg-line',
+          )}
+          aria-hidden
+        >
+          <span
+            className={cx(
+              'absolute top-0.5 w-5 h-5 rounded-pill bg-white shadow-xs',
+              'transition-[left] duration-[180ms]',
+              on ? 'left-[22px]' : 'left-0.5',
+            )}
+          />
+        </span>
+      </button>
+      {on && (
+        <Field label="Radius (meters)" className="mt-3">
+          <Input
+            type="number"
+            min={20}
+            max={2000}
+            step={10}
+            value={radius}
+            disabled={pending}
+            onChange={(e) => setRadius(Number(e.target.value))}
+            onBlur={() => save(on, radius)}
+          />
+        </Field>
+      )}
+      {error && <p className="t-body-sm text-danger mt-2">{error}</p>}
+    </>
+  );
+}
+
+/* ---------------------------------------------------- get ahead & defer */
+
+export function GetAheadSettings({ initial }: { initial: GetAheadSettingsInput }) {
+  const [pending, start] = useTransition();
+  const [settings, setSettings] = useState(initial);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function set(patch: Partial<GetAheadSettingsInput>) {
+    setSaved(false);
+    setSettings((prev) => ({ ...prev, ...patch }));
+  }
+
+  return (
+    <Card className="p-4 space-y-4">
+      <label className="flex items-center justify-between gap-3">
+        <span className="t-body-md text-ink">Let people get ahead or defer a turn</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={settings.enabled}
+          onClick={() => set({ enabled: !settings.enabled })}
+          className={cx(
+            'w-11 h-6 rounded-pill shrink-0 relative transition-colors duration-[180ms]',
+            settings.enabled ? 'bg-blue dark:bg-maize' : 'bg-line',
+          )}
+        >
+          <span
+            className={cx(
+              'absolute top-0.5 w-5 h-5 rounded-pill bg-white shadow-xs',
+              'transition-[left] duration-[180ms]',
+              settings.enabled ? 'left-[22px]' : 'left-0.5',
+            )}
+          />
+        </button>
+      </label>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Get-ahead uses / 30 days" hint="Trades places with whoever's currently up.">
+          <Input
+            type="number"
+            min={1}
+            max={30}
+            value={settings.getAhead.maxPer30d}
+            onChange={(e) => set({ getAhead: { maxPer30d: Number(e.target.value) } })}
+          />
+        </Field>
+        <Field label="Defer uses / 30 days" hint="Trades places with whoever's next.">
+          <Input
+            type="number"
+            min={1}
+            max={30}
+            value={settings.defer.maxPer30d}
+            onChange={(e) => set({ defer: { ...settings.defer, maxPer30d: Number(e.target.value) } })}
+          />
+        </Field>
+        <Field
+          label="Max defers per turn"
+          hint="Caps how many times one turn can be handed off before someone has to take it, pass it, or skip it."
+        >
+          <Input
+            type="number"
+            min={1}
+            max={20}
+            value={settings.defer.maxChain}
+            onChange={(e) => set({ defer: { ...settings.defer, maxChain: Number(e.target.value) } })}
+          />
+        </Field>
+      </div>
+
+      {error && <p className="t-body-sm text-danger">{error}</p>}
+
+      <Button
+        size="md"
+        disabled={pending}
+        onClick={() => {
+          setError(null);
+          start(async () => {
+            const res = await setGetAheadSettings(settings);
+            if (res.ok) setSaved(true);
+            else setError(res.error);
+          });
+        }}
+      >
+        {pending ? 'Saving…' : saved ? 'Saved' : 'Save'}
+      </Button>
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------- away notices */
+
+export function AwayNotices({
+  flags, longAway, timeZone,
+}: {
+  flags: AwayAbuseFlag[];
+  longAway: LongAwayMember[];
+  timeZone: string;
+}) {
+  return (
+    <Card className="divide-y divide-[var(--border-subtle)]">
+      {longAway.map((m) => (
+        <LongAwayNotice key={m.profileId} member={m} timeZone={timeZone} />
+      ))}
+      {flags.map((f) => (
+        <AwayAbuseNotice key={`${f.choreId}-${f.profileId}`} flag={f} />
+      ))}
+    </Card>
+  );
+}
+
+function LongAwayNotice({ member, timeZone }: { member: LongAwayMember; timeZone: string }) {
+  const [pending, start] = useTransition();
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (done) return null;
+
+  return (
+    <div className="p-4 space-y-2">
+      <p className="t-body-md text-ink">
+        <strong>{member.fullName}</strong> has been away since{' '}
+        {formatInTimeZone(member.since, timeZone, { month: 'short', day: 'numeric' })} — still away?
+      </p>
+      {error && <p className="t-body-sm text-danger">{error}</p>}
+      <Button
+        size="sm"
+        tone="ghost"
+        disabled={pending}
+        onClick={() => {
+          setError(null);
+          start(async () => {
+            const res = await adminClearAway(member.profileId);
+            if (res.ok) setDone(true);
+            else setError(res.error);
+          });
+        }}
+      >
+        {pending ? 'Clearing…' : 'Clear their away status'}
+      </Button>
+    </div>
+  );
+}
+
+function AwayAbuseNotice({ flag }: { flag: AwayAbuseFlag }) {
+  const [pending, start] = useTransition();
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (done) return null;
+
+  return (
+    <div className="p-4 space-y-2">
+      <p className="t-body-md text-ink">
+        {flag.choreEmoji} We noticed <strong>{flag.profileName}</strong> might be a bum — away has
+        bypassed them on <strong>{flag.choreName}</strong> {flag.incidentCount} separate times.
+      </p>
+      {error && <p className="t-body-sm text-danger">{error}</p>}
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          disabled={pending}
+          onClick={() => {
+            setError(null);
+            start(async () => {
+              const res = await setChoreAwayOverride(flag.choreId, flag.profileId, true);
+              if (res.ok) setDone(true);
+              else setError(res.error);
+            });
+          }}
+        >
+          {pending ? 'Working…' : `Stop excusing ${flag.profileName.split(' ')[0]} from this`}
+        </Button>
+        <Button
+          size="sm"
+          tone="ghost"
+          disabled={pending}
+          onClick={() => {
+            setError(null);
+            start(async () => {
+              const res = await dismissAwayFlag(flag.choreId, flag.profileId);
+              if (res.ok) setDone(true);
+              else setError(res.error);
+            });
+          }}
+        >
+          Dismiss
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /* -------------------------------------------------------------------- kiosk */
 
 export function LocationSetting({ label, address }: { label: string | null; address: string | null }) {
@@ -494,7 +772,7 @@ export function LocationSetting({ label, address }: { label: string | null; addr
         hint={
           address
             ? 'Only needed if the kiosk should show weather for somewhere other than the house.'
-            : 'Used for the kiosk weather widget.'
+            : 'Used for the kiosk weather widget, and as the center point if you turn on the nearby-completion requirement below.'
         }
       >
         <Input

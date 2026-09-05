@@ -8,6 +8,11 @@ insert into auth.users (id, email, raw_user_meta_data) values
  ('55555555-0000-0000-0000-000000000001','one@skipundo.com','{"full_name":"One Person","initials":"OP","household_id":"55555555-5555-5555-5555-555555555555"}'),
  ('55555555-0000-0000-0000-000000000002','two@skipundo.com','{"full_name":"Two Person","initials":"TP","household_id":"55555555-5555-5555-5555-555555555555"}');
 
+-- OP is the household admin — needed for the admin-only cross-person skip
+-- check below (0033).
+update profiles set is_admin = true
+ where household_id = '55555555-5555-5555-5555-555555555555' and initials = 'OP';
+
 -- Dishes: on demand, queue of 2, rotation OP > TP
 insert into chores (id, household_id, name, emoji, cadence, queue_depth)
 values ('55555555-3333-3333-3333-333333333333','55555555-5555-5555-5555-555555555555',
@@ -79,7 +84,9 @@ begin
 end $$;
 \echo '  ok  skip_turn refuses a turn that is not pending'
 
--- skip_turn refuses to act for someone else without cross-complete on
+-- skip_turn refuses a non-admin, period (0033: this used to be gated by
+-- allow_member_cross_complete only for someone else's turn; it is now
+-- admin-only across the board).
 select set_config('request.user_id', '55555555-0000-0000-0000-000000000002', false);
 
 do $$
@@ -92,13 +99,37 @@ begin
   if other_turn is not null then
     begin
       perform skip_turn(other_turn);
-      raise exception 'FAIL: skip_turn should refuse to act for another member without cross-complete';
+      raise exception 'FAIL: skip_turn should refuse a non-admin acting for another member';
     exception when others then
-      if sqlerrm not like '%only the assigned member%' then raise; end if;
+      if sqlerrm not like '%only an admin can skip a turn%' then raise; end if;
     end;
   end if;
 end $$;
-\echo '  ok  skip_turn respects allow_member_cross_complete'
+\echo '  ok  skip_turn refuses a non-admin acting for another member'
+
+-- skip_turn refuses a non-admin acting on their *own* turn too — this is the
+-- point of 0033's tightening: passing/skipping is admin-only regardless of
+-- whose turn it is, not just when it belongs to someone else.
+do $$
+declare own_turn uuid;
+begin
+  select id into own_turn from chore_turns
+  where chore_id='55555555-3333-3333-3333-333333333333' and status='pending'
+    and assignee_id='55555555-0000-0000-0000-000000000002' limit 1;
+  if own_turn is null then raise exception 'FAIL: setup — TP should have a pending turn of their own'; end if;
+
+  begin
+    perform skip_turn(own_turn);
+    raise exception 'FAIL: skip_turn should refuse a non-admin even for their own turn';
+  exception when others then
+    if sqlerrm not like '%only an admin can skip a turn%' then raise; end if;
+  end;
+
+  if (select status from chore_turns where id = own_turn) <> 'pending' then
+    raise exception 'FAIL: the rejected skip must not have changed the turn';
+  end if;
+end $$;
+\echo '  ok  skip_turn refuses a non-admin acting on their own turn'
 
 -- ---------------------------------------------------------------- undo_turn
 
@@ -170,3 +201,25 @@ begin
   end;
 end $$;
 \echo '  ok  undo_turn reopens a completed turn and refuses a pending one'
+
+-- ---------------------------------------------------- admin-only cross-skip
+
+-- OP (admin) can skip TP's turn — the positive side of the 0033 admin-only
+-- gate (the negative side, a non-admin refused, is covered above).
+select set_config('request.user_id', '55555555-0000-0000-0000-000000000001', false);
+do $$
+declare tp_turn uuid;
+begin
+  select id into tp_turn from chore_turns
+  where chore_id='55555555-3333-3333-3333-333333333333' and status='pending'
+    and assignee_id='55555555-0000-0000-0000-000000000002'
+  order by turn_number limit 1;
+  if tp_turn is null then raise exception 'FAIL: setup — TP should have a pending turn to skip'; end if;
+
+  perform skip_turn(tp_turn);
+
+  if (select status from chore_turns where id=tp_turn) <> 'skipped' then
+    raise exception 'FAIL: an admin should be able to skip another member''s turn';
+  end if;
+end $$;
+\echo '  ok  an admin can skip another member''s turn'

@@ -1,7 +1,7 @@
 // Hand-written to match supabase/migrations. Once the project is live you can
 // regenerate with:  npx supabase gen types typescript --project-id <id>
 
-export type ChoreCadence = 'scheduled' | 'on_demand';
+export type ChoreCadence = 'scheduled' | 'on_demand' | 'standing';
 export type TurnStatus = 'pending' | 'done' | 'skipped' | 'missed';
 export type SplitKind = 'equal' | 'exact' | 'shares' | 'percent' | 'adjustment';
 /** expenses.split_kind only — means "derive the split from expense_items". */
@@ -20,6 +20,11 @@ export type Household = {
   location_label: string | null;
   latitude: number | null;
   longitude: number | null;
+  house_latitude: number | null;
+  house_longitude: number | null;
+  geofence_enabled: boolean;
+  geofence_radius_meters: number;
+  signup_source: string | null;
   created_at: string;
 };
 
@@ -68,6 +73,10 @@ export type Chore = {
   lookahead_days: number;
   sort_order: number;
   is_active: boolean;
+  /** Per-chore override, on top of the household's own get_ahead module
+   * toggle — both must allow it. */
+  allow_get_ahead: boolean;
+  allow_defer: boolean;
   created_at: string;
 };
 
@@ -88,6 +97,24 @@ export type ChoreTurn = {
   completed_at: string | null;
   completed_by: string | null;
   note: string | null;
+  created_at: string;
+  /** Set by flag_on_demand/kiosk_flag_chore for a standing chore — the
+   * due_at-stamping those functions do for on_demand doesn't apply here,
+   * since a standing turn is already always visible. Never cleared on
+   * completion; the next turn a top-up creates starts fresh. */
+  flagged_at: string | null;
+  completion_distance_m: number | null;
+  completion_within_geofence: boolean | null;
+};
+
+export type ChoreAdvanceKind = 'get_ahead' | 'defer';
+
+export type ChoreAdvanceLog = {
+  id: string;
+  chore_id: string;
+  profile_id: string;
+  kind: ChoreAdvanceKind;
+  turn_id: string;
   created_at: string;
 };
 
@@ -277,9 +304,11 @@ type Defaulted =
   | 'notify_push' | 'notify_email' | 'quiet_from' | 'quiet_to' | 'timezone'
   | 'emoji' | 'days_of_week' | 'interval_weeks' | 'anchor_date' | 'due_hour'
   | 'queue_depth' | 'lookahead_days' | 'sort_order' | 'is_active' | 'status'
+  | 'allow_get_ahead' | 'allow_defer'
   | 'spent_on' | 'settled_on' | 'split_kind' | 'category' | 'method'
   | 'metadata' | 'turn_number' | 'position' | 'interval_months' | 'next_run_on'
-  | 'allow_member_cross_complete' | 'expires_at' | 'starts_at';
+  | 'allow_member_cross_complete' | 'expires_at' | 'starts_at'
+  | 'geofence_enabled' | 'geofence_radius_meters';
 
 /** Nullable columns are optional on insert too — Postgres fills them with NULL. */
 type NullableKeys<Row> = {
@@ -320,6 +349,7 @@ export type Database = {
       kiosk_messages: Table<KioskMessage>;
       activity_log: Table<ActivityEntry>;
       member_away: Table<MemberAwayRow>;
+      chore_advance_log: Table<ChoreAdvanceLog>;
     };
     Views: {
       v_balances: View<Balance>;
@@ -333,15 +363,99 @@ export type Database = {
       pass_turn: { Args: { p_turn: string; p_note?: string | null }; Returns: ChoreTurn };
       set_away: { Args: { p_until?: string | null }; Returns: MemberAwayRow };
       clear_away: { Args: Record<PropertyKey, never>; Returns: void };
+      admin_clear_away: { Args: { p_profile: string }; Returns: void };
+      get_away_abuse_flags: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          chore_id: string; chore_name: string; chore_emoji: string;
+          profile_id: string; profile_name: string; incident_count: number;
+        }[];
+      };
+      set_chore_away_override: {
+        Args: { p_chore: string; p_profile: string; p_enforce: boolean };
+        Returns: void;
+      };
+      dismiss_away_flag: { Args: { p_chore: string; p_profile: string }; Returns: void };
       append_turn: { Args: { p_chore: string; p_due?: string | null }; Returns: ChoreTurn };
       top_up_queue: { Args: { p_chore: string }; Returns: number };
       materialize_schedule: { Args: { p_chore: string }; Returns: number };
-      complete_turn: { Args: { p_turn: string; p_note?: string | null }; Returns: ChoreTurn };
+      complete_turn: {
+        Args: {
+          p_turn: string;
+          p_note?: string | null;
+          p_lat?: number | null;
+          p_lon?: number | null;
+        };
+        Returns: ChoreTurn;
+      };
       skip_turn: { Args: { p_turn: string; p_note?: string | null }; Returns: ChoreTurn };
       undo_turn: { Args: { p_turn: string }; Returns: ChoreTurn };
       flag_on_demand: { Args: { p_chore: string }; Returns: ChoreTurn };
+      get_ahead: { Args: { p_chore: string }; Returns: ChoreTurn };
+      defer_turn: { Args: { p_turn: string }; Returns: ChoreTurn };
+      haversine_meters: {
+        Args: { lat1: number; lon1: number; lat2: number; lon2: number };
+        Returns: number;
+      };
+      set_geofence: {
+        Args: {
+          p_enabled: boolean;
+          p_radius_meters?: number | null;
+          p_lat?: number | null;
+          p_lon?: number | null;
+        };
+        Returns: undefined;
+      };
       accept_swap: { Args: { p_swap: string }; Returns: undefined };
       is_household_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
+      is_platform_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
+      submit_feedback: {
+        Args: { p_kind: string; p_body: string; p_metadata?: Record<string, unknown> | null };
+        Returns: string;
+      };
+      platform_stats: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          households_total: number;
+          households_last_30d: number;
+          members_total: number;
+          members_last_30d: number;
+          admins_total: number;
+          module_enabled_counts: Record<string, number>;
+          turns_completed_last_7d: number;
+          turns_completed_last_30d: number;
+          turns_skipped_last_30d: number;
+          cross_complete_enabled_count: number;
+          geofence_enabled_count: number;
+          signup_source_counts: Record<string, number>;
+          feedback_total: number;
+          feedback_last_30d: number;
+        }[];
+      };
+      platform_households_summary: {
+        Args: { p_limit?: number };
+        Returns: {
+          id: string;
+          created_at: string;
+          member_count: number;
+          modules_enabled: string[];
+          allow_member_cross_complete: boolean;
+          geofence_enabled: boolean;
+          signup_source: string | null;
+        }[];
+      };
+      platform_feedback: {
+        Args: { p_limit?: number };
+        Returns: {
+          id: string;
+          household_name: string | null;
+          submitter_name: string | null;
+          kind: string;
+          body: string;
+          metadata: Record<string, unknown>;
+          created_at: string;
+        }[];
+      };
       create_household: {
         Args: {
           p_name: string;
@@ -350,6 +464,7 @@ export type Database = {
           p_full_name?: string | null;
           p_initials?: string | null;
           p_modules?: string[] | null;
+          p_signup_source?: string | null;
         };
         Returns: string;
       };
@@ -407,6 +522,8 @@ export type Database = {
           p_queue_depth?: number;
           p_lookahead_days?: number;
           p_profile_ids?: string[];
+          p_allow_get_ahead?: boolean;
+          p_allow_defer?: boolean;
         };
         Returns: Chore;
       };
@@ -423,6 +540,8 @@ export type Database = {
           p_queue_depth?: number | null;
           p_lookahead_days?: number | null;
           p_sort_order?: number | null;
+          p_allow_get_ahead?: boolean | null;
+          p_allow_defer?: boolean | null;
         };
         Returns: Chore;
       };
@@ -557,6 +676,7 @@ export type TurnCard = ChoreTurn & {
   chore: Pick<
     Chore,
     'id' | 'name' | 'emoji' | 'cadence' | 'description' | 'days_of_week' | 'interval_weeks'
+    | 'allow_get_ahead' | 'allow_defer'
   >;
   assignee: Pick<Profile, 'id' | 'full_name' | 'initials' | 'color'>;
 };

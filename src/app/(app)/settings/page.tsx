@@ -5,6 +5,7 @@ import { Card, SectionHeader, Initials, Button } from '@/components/ui';
 import { signOut } from '@/lib/actions';
 import { PushToggle } from './push-toggle';
 import { AwayToggle } from './away-toggle';
+import { FeedbackForm } from './feedback-form';
 import { ReplayIntro } from '@/components/intro';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { THEME_COOKIE, parseThemeCookie } from '@/lib/theme';
@@ -120,6 +121,11 @@ export default async function SettingsPage() {
       <section>
         <SectionHeader title="Help" />
         <ReplayIntro modules={modules} householdName={household.name} />
+      </section>
+
+      <section>
+        <SectionHeader title="Feedback" />
+        <FeedbackForm />
       </section>
 
       <form action={signOut}>

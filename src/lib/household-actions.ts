@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
-import { geocodeLocation } from '@/lib/weather';
+import { geocodeLocation, geocodeHouseAddress } from '@/lib/weather';
 import type { ActionResult } from '@/lib/actions';
 import type { HouseholdInvite } from '@/lib/types';
 
@@ -21,6 +21,10 @@ const NewHousehold = z.object({
   full_name: z.string().min(1, 'What should everyone call you?').max(80),
   initials: z.string().min(1).max(3),
   modules: z.array(z.string()).min(1, 'Pick at least one thing to track.'),
+  /** Honest, minimal "join source" — captured only at household creation,
+   * from an optional `?ref=` onboarding query param. No IP/user-agent
+   * tracking anywhere in this app. */
+  signup_source: z.string().max(40).regex(/^[a-z0-9_-]+$/).optional(),
 });
 
 export async function createHousehold(
@@ -39,6 +43,7 @@ export async function createHousehold(
     p_full_name: parsed.data.full_name,
     p_initials: parsed.data.initials.toUpperCase(),
     p_modules: parsed.data.modules,
+    p_signup_source: parsed.data.signup_source || null,
   });
 
   if (error) return fail(error, 'Could not create the household.');
@@ -159,6 +164,77 @@ export async function setCrossComplete(enabled: boolean): Promise<ActionResult> 
   return { ok: true };
 }
 
+/* ------------------------------------------------------- admin: get ahead/defer */
+
+export type GetAheadSettingsInput = {
+  enabled: boolean;
+  getAhead: { maxPer30d: number };
+  defer: { maxPer30d: number; maxChain: number };
+};
+
+export async function setGetAheadSettings(input: GetAheadSettingsInput): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('set_module', {
+    p_module: 'get_ahead',
+    p_enabled: input.enabled,
+    p_settings: {
+      get_ahead: { max_per_30d: input.getAhead.maxPer30d },
+      defer: { max_per_30d: input.defer.maxPer30d, max_chain: input.defer.maxChain },
+    },
+  });
+  if (error) return fail(error, 'Could not save those limits.');
+  revalidatePath('/settings/household');
+  return { ok: true };
+}
+
+/* ------------------------------------------------------------- admin: geofence */
+
+export async function setGeofence(enabled: boolean, radiusMeters?: number): Promise<ActionResult> {
+  const supabase = await createClient();
+
+  // The geofence centers on the house's own address, not the kiosk's
+  // optional weather-location override, so an admin doesn't have to
+  // configure that override just to turn this on. Geocode the address here
+  // so set_geofence has fresh coordinates to persist — only needed the first
+  // time it's turned on. Falls back to the kiosk override's coordinates for
+  // a household with no address on file, since that's the only location it
+  // has.
+  let lat: number | null = null;
+  let lon: number | null = null;
+  if (enabled) {
+    const { data: hh } = await supabase
+      .from('households')
+      .select('address, house_latitude, house_longitude, latitude, longitude')
+      .single();
+    if (hh?.house_latitude == null || hh?.house_longitude == null) {
+      if (hh?.address) {
+        const place = await geocodeHouseAddress(hh.address);
+        if (!place) {
+          return { ok: false, error: "Couldn't locate the house address on file — double-check it's correct." };
+        }
+        lat = place.lat;
+        lon = place.lon;
+      } else if (hh?.latitude != null && hh?.longitude != null) {
+        lat = hh.latitude;
+        lon = hh.longitude;
+      } else {
+        return { ok: false, error: 'Set a house address, or a location above, first.' };
+      }
+    }
+  }
+
+  const { error } = await supabase.rpc('set_geofence', {
+    p_enabled: enabled,
+    p_radius_meters: radiusMeters ?? null,
+    p_lat: lat,
+    p_lon: lon,
+  });
+  if (error) return fail(error, 'Could not change that.');
+  revalidatePath('/settings/household');
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
 /* -------------------------------------------------------------- admin: weather */
 
 export async function setHouseholdLocation(query: string): Promise<ActionResult & { label?: string }> {
@@ -219,5 +295,44 @@ export async function clearAiConfig(): Promise<ActionResult> {
   const { error } = await supabase.rpc('clear_ai_config');
   if (error) return fail(error, 'Could not remove that key.');
   revalidatePath('/settings/household');
+  return { ok: true };
+}
+
+/* -------------------------------------------------------- admin: away notices */
+
+export async function setChoreAwayOverride(
+  choreId: string,
+  profileId: string,
+  enforce: boolean,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('set_chore_away_override', {
+    p_chore: choreId,
+    p_profile: profileId,
+    p_enforce: enforce,
+  });
+  if (error) return fail(error, 'Could not change that.');
+  revalidatePath('/settings/household');
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+export async function dismissAwayFlag(choreId: string, profileId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('dismiss_away_flag', {
+    p_chore: choreId,
+    p_profile: profileId,
+  });
+  if (error) return fail(error, 'Could not dismiss that.');
+  revalidatePath('/settings/household');
+  return { ok: true };
+}
+
+export async function adminClearAway(profileId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('admin_clear_away', { p_profile: profileId });
+  if (error) return fail(error, 'Could not clear their away status.');
+  revalidatePath('/settings/household');
+  revalidatePath('/', 'layout');
   return { ok: true };
 }

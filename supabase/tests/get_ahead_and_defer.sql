@@ -1,0 +1,410 @@
+\set ON_ERROR_STOP on
+
+-- get_ahead/defer_turn (0029) — a queue-position swap, never completing or
+-- pushing a due date. get_ahead trades your own upcoming turn for whoever
+-- currently holds the chore; defer hands your current turn to the next
+-- person and takes their upcoming one instead.
+
+insert into households (id, name, timezone)
+values ('2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b', 'Get Ahead Test House', 'America/Detroit');
+
+insert into auth.users (id, email, raw_user_meta_data) values
+ ('2b3b2b3b-0000-0000-0000-000000000001','op@ahead.com','{"full_name":"One Person","initials":"OP","household_id":"2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b"}'),
+ ('2b3b2b3b-0000-0000-0000-000000000002','tp@ahead.com','{"full_name":"Two Person","initials":"TP","household_id":"2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b"}'),
+ ('2b3b2b3b-0000-0000-0000-000000000003','thp@ahead.com','{"full_name":"Three Person","initials":"3P","household_id":"2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b"}'),
+ ('2b3b2b3b-0000-0000-0000-000000000004','fp@ahead.com','{"full_name":"Four Person","initials":"4P","household_id":"2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b"}');
+
+-- Dishes2: on demand, queue of 3, rotation OP(0) > TP(1) > 3P(2). 4P is a
+-- household member deliberately left out of this chore's rotation.
+insert into chores (id, household_id, name, emoji, cadence, queue_depth)
+values ('2b3b2b3b-1111-1111-1111-111111111111','2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b',
+        'Dishes2','🍽️','on_demand',3);
+
+insert into chore_rotation (chore_id, profile_id, position)
+select '2b3b2b3b-1111-1111-1111-111111111111', id,
+       case initials when 'OP' then 0 when 'TP' then 1 else 2 end
+from profiles
+where household_id = '2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b' and initials in ('OP','TP','3P');
+
+-- Trash2: scheduled, every day, rotation OP(0) > TP(1) — always has a "next
+-- matching date" so the walk-forward search never runs out of room.
+insert into chores (id, household_id, name, emoji, cadence, days_of_week, anchor_date)
+values ('2b3b2b3b-2222-2222-2222-222222222222','2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b',
+        'Trash2','🗑️','scheduled','{0,1,2,3,4,5,6}', current_date);
+
+insert into chore_rotation (chore_id, profile_id, position)
+select '2b3b2b3b-2222-2222-2222-222222222222', id,
+       case initials when 'OP' then 0 else 1 end
+from profiles
+where household_id = '2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b' and initials in ('OP','TP');
+
+-- StandingX: rotation OP(0) > TP(1) — since 0033, get_ahead/defer_turn now
+-- support standing chores too (they used to be excluded outright).
+insert into chores (id, household_id, name, emoji, cadence)
+values ('2b3b2b3b-3333-3333-3333-333333333333','2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b',
+        'StandingX','♻️','standing');
+
+insert into chore_rotation (chore_id, profile_id, position)
+select '2b3b2b3b-3333-3333-3333-333333333333', id,
+       case initials when 'OP' then 0 else 1 end
+from profiles
+where household_id = '2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b' and initials in ('OP','TP');
+
+-- NoAdvance: on demand, rotation OP(0) > TP(1), but this specific chore opts
+-- out of both get-ahead and defer (0033's per-chore allow_get_ahead/allow_defer),
+-- independent of the household-wide toggle.
+insert into chores (id, household_id, name, emoji, cadence, queue_depth, allow_get_ahead, allow_defer)
+values ('2b3b2b3b-4444-4444-4444-444444444444','2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b',
+        'NoAdvance','🔒','on_demand',2,false,false);
+
+insert into chore_rotation (chore_id, profile_id, position)
+select '2b3b2b3b-4444-4444-4444-444444444444', id,
+       case initials when 'OP' then 0 else 1 end
+from profiles
+where household_id = '2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b' and initials in ('OP','TP');
+
+-- OP is the household admin — pass_turn is admin-only (0033), needed below to
+-- cycle a turn off TP without that being what the test is actually about.
+update profiles set is_admin = true
+ where household_id = '2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b' and initials = 'OP';
+
+select top_up_queue('2b3b2b3b-1111-1111-1111-111111111111');
+select materialize_schedule('2b3b2b3b-2222-2222-2222-222222222222');
+select top_up_queue('2b3b2b3b-3333-3333-3333-333333333333');
+select top_up_queue('2b3b2b3b-4444-4444-4444-444444444444');
+
+/* ================================================================ get_ahead */
+
+-- Current turn (turn 0) is OP's. TP wants to get ahead of OP.
+select set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000002', false);
+
+do $$
+declare current_turn_id uuid; tp_future_turn_id uuid; owner text;
+begin
+  select id into current_turn_id from chore_turns
+  where chore_id = '2b3b2b3b-1111-1111-1111-111111111111' and turn_number = 0;
+  select id into tp_future_turn_id from chore_turns
+  where chore_id = '2b3b2b3b-1111-1111-1111-111111111111' and turn_number = 1;
+
+  perform get_ahead('2b3b2b3b-1111-1111-1111-111111111111');
+
+  select p.initials into owner from chore_turns t join profiles p on p.id = t.assignee_id
+  where t.id = current_turn_id;
+  if owner <> 'TP' then raise exception 'FAIL: get_ahead should hand the current turn to the caller (TP), got %', owner; end if;
+  if (select status from chore_turns where id = current_turn_id) <> 'pending' then
+    raise exception 'FAIL: get_ahead must not complete anything — the turn stays pending';
+  end if;
+
+  select p.initials into owner from chore_turns t join profiles p on p.id = t.assignee_id
+  where t.id = tp_future_turn_id;
+  if owner <> 'OP' then raise exception 'FAIL: OP should now hold TP''s former upcoming turn, got %', owner; end if;
+
+  -- 3P's turn (turn 2) is untouched — get_ahead only swaps the two parties.
+  if (select p.initials from chore_turns t join profiles p on p.id = t.assignee_id
+      where t.chore_id = '2b3b2b3b-1111-1111-1111-111111111111' and t.turn_number = 2) <> '3P' then
+    raise exception 'FAIL: get_ahead must not touch anyone else''s turn';
+  end if;
+
+  if (select count(*) from chore_advance_log where turn_id = current_turn_id and kind = 'get_ahead') <> 1 then
+    raise exception 'FAIL: get_ahead should log itself';
+  end if;
+end $$;
+\echo '  ok  get_ahead swaps the caller into the current turn and the displaced person into the caller''s upcoming one'
+
+-- Self-limiting: TP now holds the current turn, so a second attempt is refused.
+do $$
+begin
+  begin
+    perform get_ahead('2b3b2b3b-1111-1111-1111-111111111111');
+    raise exception 'FAIL: get_ahead should refuse once it is already the caller''s turn';
+  exception when others then
+    if sqlerrm not like '%already your turn%' then raise; end if;
+  end;
+end $$;
+\echo '  ok  get_ahead refuses when it is already the caller''s turn'
+
+-- Default limit: 1 use per rolling 30 days.
+do $$
+declare current_turn_id uuid;
+begin
+  select id into current_turn_id from chore_turns
+  where chore_id = '2b3b2b3b-1111-1111-1111-111111111111' and turn_number = 0;
+
+  -- Cycle the turn off TP (pass_turn is admin-only since 0033, so this runs
+  -- as OP) so TP is free to attempt get_ahead again without tripping the
+  -- self-limiting guard above.
+  perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000001', false);
+  perform pass_turn(current_turn_id); -- TP -> 3P (next in rotation order)
+  perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000002', false);
+
+  begin
+    perform get_ahead('2b3b2b3b-1111-1111-1111-111111111111');
+    raise exception 'FAIL: get_ahead should refuse a second use inside 30 days';
+  exception when others then
+    if sqlerrm not like '%last 30 days%' then raise; end if;
+  end;
+end $$;
+\echo '  ok  get_ahead enforces the default once-per-30-days limit'
+
+-- Someone outside the chore's rotation can't get ahead on it.
+select set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000004', false);
+do $$
+begin
+  begin
+    perform get_ahead('2b3b2b3b-1111-1111-1111-111111111111');
+    raise exception 'FAIL: get_ahead should refuse someone not in the rotation';
+  exception when others then
+    if sqlerrm not like '%not in this chore%rotation%' then raise; end if;
+  end;
+end $$;
+\echo '  ok  get_ahead refuses someone outside the chore''s rotation'
+
+-- Standing chores now support get_ahead (0033). StandingX's only pending turn
+-- (turn 0) belongs to OP; TP getting ahead swaps into it, materializing TP's
+-- own next standing turn for OP to hold in exchange — same swap as any other
+-- cadence, just briefly two pending turns instead of the usual one.
+select set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000002', false);
+do $$
+declare current_turn_id uuid; owner text; pending_count int;
+begin
+  select id into current_turn_id from chore_turns
+  where chore_id = '2b3b2b3b-3333-3333-3333-333333333333' and status = 'pending'
+  order by turn_number limit 1;
+
+  perform get_ahead('2b3b2b3b-3333-3333-3333-333333333333');
+
+  select p.initials into owner from chore_turns t join profiles p on p.id = t.assignee_id
+  where t.id = current_turn_id;
+  if owner <> 'TP' then
+    raise exception 'FAIL: get_ahead should hand the standing chore''s current turn to the caller (TP), got %', owner;
+  end if;
+
+  select count(*) into pending_count from chore_turns
+  where chore_id = '2b3b2b3b-3333-3333-3333-333333333333' and status = 'pending';
+  if pending_count <> 2 then
+    raise exception 'FAIL: get_ahead on a standing chore should briefly leave two pending turns, got %', pending_count;
+  end if;
+end $$;
+\echo '  ok  get_ahead now works on standing chores (0033), briefly leaving two pending turns that resolve as usual'
+
+-- The household can turn the whole feature off.
+insert into household_modules (household_id, module, enabled)
+values ('2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b', 'get_ahead', false)
+on conflict (household_id, module) do update set enabled = excluded.enabled;
+do $$
+begin
+  begin
+    perform get_ahead('2b3b2b3b-1111-1111-1111-111111111111');
+    raise exception 'FAIL: get_ahead should refuse once the household has turned it off';
+  exception when others then
+    if sqlerrm not like '%turned off for this house%' then raise; end if;
+  end;
+end $$;
+\echo '  ok  get_ahead respects the household on/off toggle'
+
+-- Back on, with a generous 30-day allowance, for the defer tests below.
+-- defer.max_chain is left unset, so it defaults to this household's own
+-- member count (4: OP/TP/3P/4P) — exercised directly by the cascade-cap
+-- test near the end of this file.
+insert into household_modules (household_id, module, enabled, settings)
+values ('2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b', 'get_ahead', true,
+        '{"get_ahead":{"max_per_30d":5},"defer":{"max_per_30d":5}}'::jsonb)
+on conflict (household_id, module) do update set enabled = excluded.enabled, settings = excluded.settings;
+
+/* =================================================================== defer */
+
+select set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000001', false);
+
+do $$
+declare current_turn_id uuid; op_future_turn_id uuid; owner text; n_before int; n_after int;
+begin
+  select id into current_turn_id from chore_turns
+  where chore_id = '2b3b2b3b-2222-2222-2222-222222222222' and status = 'pending'
+    and assignee_id = '2b3b2b3b-0000-0000-0000-000000000001'
+  order by turn_number limit 1;
+  if current_turn_id is null then raise exception 'FAIL: setup — OP should have a current Trash2 turn'; end if;
+
+  select count(*) into n_before from chore_turns where chore_id = '2b3b2b3b-2222-2222-2222-222222222222';
+
+  perform defer_turn(current_turn_id);
+
+  select p.initials into owner from chore_turns t join profiles p on p.id = t.assignee_id
+  where t.id = current_turn_id;
+  if owner <> 'TP' then raise exception 'FAIL: defer should hand the current turn to the next person (TP), got %', owner; end if;
+  if (select status from chore_turns where id = current_turn_id) <> 'pending' then
+    raise exception 'FAIL: defer must not complete anything — the turn stays pending';
+  end if;
+
+  -- OP should now hold whatever TP's next upcoming turn was/became.
+  select id into op_future_turn_id from chore_turns
+  where chore_id = '2b3b2b3b-2222-2222-2222-222222222222' and assignee_id = '2b3b2b3b-0000-0000-0000-000000000001'
+    and id <> current_turn_id;
+  if op_future_turn_id is null then raise exception 'FAIL: OP should hold a different, later turn after deferring'; end if;
+
+  if (select count(*) from chore_advance_log where turn_id = current_turn_id and kind = 'defer') <> 1 then
+    raise exception 'FAIL: defer_turn should log itself';
+  end if;
+
+  select count(*) into n_after from chore_turns where chore_id = '2b3b2b3b-2222-2222-2222-222222222222';
+  if n_after < n_before then raise exception 'FAIL: defer should never remove a turn'; end if;
+end $$;
+\echo '  ok  defer_turn hands the current turn to the next person and takes their upcoming turn in exchange'
+
+-- Only the assignee can defer their own turn.
+select set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000002', false);
+do $$
+declare other_turn uuid;
+begin
+  select id into other_turn from chore_turns
+  where chore_id = '2b3b2b3b-2222-2222-2222-222222222222' and status = 'pending'
+    and assignee_id <> '2b3b2b3b-0000-0000-0000-000000000002'
+  order by turn_number limit 1;
+
+  begin
+    perform defer_turn(other_turn);
+    raise exception 'FAIL: defer_turn should refuse someone who is not the assignee';
+  exception when others then
+    if sqlerrm not like '%your own turn%' then raise; end if;
+  end;
+end $$;
+\echo '  ok  defer_turn refuses to act on someone else''s turn'
+
+-- Standing chores now support defer_turn too (0033). OP holds one of
+-- StandingX's two pending turns (from the get_ahead swap above) and defers
+-- it to TP, taking a different pending turn on the same chore in exchange.
+select set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000001', false);
+do $$
+declare op_turn_id uuid; owner text; op_holds_another boolean;
+begin
+  select id into op_turn_id from chore_turns
+  where chore_id = '2b3b2b3b-3333-3333-3333-333333333333' and status = 'pending'
+    and assignee_id = '2b3b2b3b-0000-0000-0000-000000000001'
+  order by turn_number limit 1;
+  if op_turn_id is null then raise exception 'FAIL: setup — OP should hold a pending StandingX turn'; end if;
+
+  perform defer_turn(op_turn_id);
+
+  select p.initials into owner from chore_turns t join profiles p on p.id = t.assignee_id
+  where t.id = op_turn_id;
+  if owner <> 'TP' then
+    raise exception 'FAIL: defer_turn should hand the standing chore''s turn to the next person (TP), got %', owner;
+  end if;
+
+  select exists (
+    select 1 from chore_turns
+    where chore_id = '2b3b2b3b-3333-3333-3333-333333333333' and status = 'pending'
+      and assignee_id = '2b3b2b3b-0000-0000-0000-000000000001' and id <> op_turn_id
+  ) into op_holds_another;
+  if not op_holds_another then
+    raise exception 'FAIL: OP should hold a different pending StandingX turn after deferring';
+  end if;
+end $$;
+\echo '  ok  defer_turn now works on standing chores (0033)'
+
+/* ---------------------------------------------------- per-chore overrides */
+
+-- A chore can opt out of get-ahead/defer even while the household toggle is
+-- on (0033's allow_get_ahead/allow_defer columns).
+select set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000002', false);
+do $$
+begin
+  begin
+    perform get_ahead('2b3b2b3b-4444-4444-4444-444444444444');
+    raise exception 'FAIL: get_ahead should refuse when the chore itself disallows it';
+  exception when others then
+    if sqlerrm not like '%get-ahead is turned off for this chore%' then raise; end if;
+  end;
+end $$;
+\echo '  ok  get_ahead respects a chore-level allow_get_ahead = false, even with the household toggle on'
+
+select set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000001', false);
+do $$
+declare a_turn uuid;
+begin
+  select id into a_turn from chore_turns
+  where chore_id = '2b3b2b3b-4444-4444-4444-444444444444' and status = 'pending'
+    and assignee_id = '2b3b2b3b-0000-0000-0000-000000000001'
+  order by turn_number limit 1;
+
+  begin
+    perform defer_turn(a_turn);
+    raise exception 'FAIL: defer_turn should refuse when the chore itself disallows it';
+  exception when others then
+    if sqlerrm not like '%defer is turned off for this chore%' then raise; end if;
+  end;
+end $$;
+\echo '  ok  defer_turn respects a chore-level allow_defer = false, even with the household toggle on'
+
+/* ------------------------------------------------------- defer chain cap */
+
+-- Left unchecked, defer_turn can cascade forever: whoever holds a turn hands
+-- it to the next person in rotation, who can hand it off again, and so on —
+-- it even wraps back around and reuses an earlier deferrer's queued turn
+-- instead of erroring. The chain cap (defer.max_chain, defaulting to the
+-- household's own member count — 4 here — since no override is set above)
+-- stops that: a single turn can cascade through everyone at most once before
+-- someone actually has to take it, pass it, or skip it.
+
+-- ChainX: on demand, rotation covering all four household members, so a full
+-- cascade (one hand-off per person) lines up exactly with the default cap.
+insert into chores (id, household_id, name, emoji, cadence, queue_depth)
+values ('2b3b2b3b-5555-5555-5555-555555555555','2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b',
+        'ChainX','🔗','on_demand',1);
+
+insert into chore_rotation (chore_id, profile_id, position)
+select '2b3b2b3b-5555-5555-5555-555555555555', id,
+       case initials when 'OP' then 0 when 'TP' then 1 when '3P' then 2 else 3 end
+from profiles
+where household_id = '2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b' and initials in ('OP','TP','3P','4P');
+
+select top_up_queue('2b3b2b3b-5555-5555-5555-555555555555');
+
+do $$
+declare
+  the_turn uuid;
+  owner    text;
+  chain_n  int;
+begin
+  select id into the_turn from chore_turns
+  where chore_id = '2b3b2b3b-5555-5555-5555-555555555555' and status = 'pending';
+
+  -- OP -> TP -> 3P -> 4P, one defer each (chain count 0 -> 4, the default cap
+  -- for this 4-person household). 4P's defer wraps back around and reuses
+  -- OP's already-queued turn from the first hand-off, rather than erroring.
+  perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000001', false);
+  perform defer_turn(the_turn);
+  perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000002', false);
+  perform defer_turn(the_turn);
+  perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000003', false);
+  perform defer_turn(the_turn);
+  perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000004', false);
+  perform defer_turn(the_turn);
+
+  select p.initials into owner from chore_turns t join profiles p on p.id = t.assignee_id
+  where t.id = the_turn;
+  if owner <> 'OP' then
+    raise exception 'FAIL: setup — four defers around a 4-person rotation should wrap back to OP, got %', owner;
+  end if;
+
+  select count(*) into chain_n from chore_advance_log where turn_id = the_turn and kind = 'defer';
+  if chain_n <> 4 then raise exception 'FAIL: this turn should show 4 defers logged against it, got %', chain_n; end if;
+
+  -- A fifth defer on the same turn — refused, cap is 4 (this household's
+  -- size). OP holds it now (from the wrap-around above), so OP is the caller.
+  perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000001', false);
+  begin
+    perform defer_turn(the_turn);
+    raise exception 'FAIL: defer_turn should refuse once a turn hits its chain cap';
+  exception when others then
+    if sqlerrm not like '%already been deferred%' then raise; end if;
+  end;
+
+  -- The rejected attempt must not have changed anything.
+  select p.initials into owner from chore_turns t join profiles p on p.id = t.assignee_id
+  where t.id = the_turn;
+  if owner <> 'OP' then raise exception 'FAIL: a refused defer must not reassign the turn'; end if;
+  if (select status from chore_turns where id = the_turn) <> 'pending' then
+    raise exception 'FAIL: a refused defer must not change the turn''s status';
+  end if;
+end $$;
+\echo '  ok  defer_turn caps a cascade at the household size by default, wrapping around once before blocking'

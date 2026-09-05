@@ -153,4 +153,16 @@ export const Icon = {
       <path d="M8.5 20h7M12 16.5V20" />
     </svg>
   ),
+  Flag: ({ size = 24, className }: IconProps) => (
+    <svg {...base(size, className)}>
+      <path d="M6 21V4" />
+      <path d="M6 5.5c1.7-1.3 3.4-1.3 5 0s3.3 1.3 5 0v8c-1.7 1.3-3.4 1.3-5 0s-3.3-1.3-5 0Z" />
+    </svg>
+  ),
+  FastForward: ({ size = 24, className }: IconProps) => (
+    <svg {...base(size, className)}>
+      <path d="M4 6.5v11l8-5.5z" />
+      <path d="M12.5 6.5v11l8-5.5z" />
+    </svg>
+  ),
 };

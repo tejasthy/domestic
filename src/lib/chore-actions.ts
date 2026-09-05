@@ -15,13 +15,15 @@ const ChoreInput = z.object({
   name: z.string().min(1, 'Give it a name.').max(80),
   emoji: z.string().min(1).max(8).default('🧹'),
   description: z.string().max(300).optional(),
-  cadence: z.enum(['scheduled', 'on_demand']),
+  cadence: z.enum(['scheduled', 'on_demand', 'standing']),
   days_of_week: z.array(z.number().int().min(0).max(6)).default([]),
   interval_weeks: z.number().int().min(1).max(52).default(1),
   due_hour: z.number().int().min(0).max(23).default(20),
   queue_depth: z.number().int().min(1).max(20).default(4),
   lookahead_days: z.number().int().min(1).max(90).default(21),
   profile_ids: z.array(z.string().uuid()).default([]),
+  allow_get_ahead: z.boolean().default(true),
+  allow_defer: z.boolean().default(true),
 });
 
 export type ChoreInputType = z.input<typeof ChoreInput>;
@@ -47,6 +49,8 @@ export async function createChore(
     p_queue_depth: c.queue_depth,
     p_lookahead_days: c.lookahead_days,
     p_profile_ids: c.profile_ids,
+    p_allow_get_ahead: c.allow_get_ahead,
+    p_allow_defer: c.allow_defer,
   });
 
   if (error) return fail(error, 'Could not add that chore.');
@@ -76,6 +80,8 @@ export async function updateChore(
     p_due_hour: c.due_hour,
     p_queue_depth: c.queue_depth,
     p_lookahead_days: c.lookahead_days,
+    p_allow_get_ahead: c.allow_get_ahead,
+    p_allow_defer: c.allow_defer,
   });
   if (error) return fail(error, 'Could not save that chore.');
 

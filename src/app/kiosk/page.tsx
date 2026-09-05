@@ -55,7 +55,7 @@ export default async function KioskPage({
   const showMoney = modules.includes('expenses');
   const byId = new Map(members.map((m) => [m.id, m]));
   const adminIds = members.filter((m) => m.is_admin).map((m) => m.id);
-  const onDemand = chores.filter((c) => c.cadence === 'on_demand');
+  const flaggable = chores.filter((c) => c.cadence === 'on_demand' || c.cadence === 'standing');
   const upNextByChore = new Map(upNext.map((t) => [t.chore_id, t]));
 
   // An explicit Wall display location always wins; otherwise fall back to
@@ -75,8 +75,10 @@ export default async function KioskPage({
   // 'anytime') is just holding a place in line, not yet needing doing — same
   // rule the main dashboard uses for "You're up". It only belongs in "Up now"
   // once someone flags it, which is what the kiosk's own Flag buttons do.
+  // Standing chores have no due date at all and are always "up" for whoever
+  // currently holds them.
   const urgent = upNext.filter((t) =>
-    ['overdue', 'today'].includes(bucketFor(t.due_at, household.timezone)),
+    t.chore.cadence === 'standing' || ['overdue', 'today'].includes(bucketFor(t.due_at, household.timezone)),
   );
   const later = upNext.filter((t) => !urgent.includes(t));
 
@@ -129,19 +131,34 @@ export default async function KioskPage({
             <h2 className="t-label text-ink-muted mb-3">Up now</h2>
             <div className="grid grid-cols-2 gap-4">
               {urgent.map((t) => {
+                const standing = t.chore.cadence === 'standing';
+                const flagged = standing && t.flagged_at != null;
                 const bucket = bucketFor(t.due_at, household.timezone);
                 return (
-                  <KioskTurnCard key={t.id} turnId={t.id} choreName={t.chore.name} className="p-5">
+                  <KioskTurnCard
+                    key={t.id}
+                    turnId={t.id}
+                    choreName={t.chore.name}
+                    className={cx('p-5', flagged && 'ring-2 ring-maize bg-maize/[0.06]')}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <span className="text-5xl" aria-hidden>{t.chore.emoji}</span>
                       <Pill
                         tone={
-                          bucket === 'overdue' ? 'danger'
+                          flagged ? 'accent'
+                          : standing ? 'accent'
+                          : bucket === 'overdue' ? 'danger'
                           : bucket === 'today' ? 'warning'
                           : 'neutral'
                         }
                       >
-                        {bucket === 'overdue' ? 'Overdue'
+                        {flagged ? 'Flagged'
+                          // The kiosk is a shared, no-viewer display — the
+                          // assignee's name is already shown below the tile,
+                          // so this never says "Your turn" the way the app's
+                          // own per-viewer card can.
+                          : standing ? 'Up now'
+                          : bucket === 'overdue' ? 'Overdue'
                           : bucket === 'today' ? 'Today'
                           : 'Whenever'}
                       </Pill>
@@ -169,17 +186,21 @@ export default async function KioskPage({
               )}
             </div>
 
-            {onDemand.length > 0 && (
+            {flaggable.length > 0 && (
               <>
                 <h2 className="t-label text-ink-muted mt-8 mb-3">Flag something</h2>
                 <div className="grid grid-cols-3 gap-3">
-                  {onDemand.map((c) => (
+                  {flaggable.map((c) => (
                     <KioskFlagButton
                       key={c.id}
                       choreId={c.id}
                       emoji={c.emoji}
                       label={c.name}
-                      flagged={upNextByChore.get(c.id)?.due_at != null}
+                      flagged={
+                        c.cadence === 'standing'
+                          ? upNextByChore.get(c.id)?.flagged_at != null
+                          : upNextByChore.get(c.id)?.due_at != null
+                      }
                     />
                   ))}
                 </div>

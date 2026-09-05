@@ -24,10 +24,12 @@ function initialsFrom(name: string) {
 export function Onboarding({
   suggestedName,
   initialCode,
+  signupSource,
   modules,
 }: {
   suggestedName: string;
   initialCode: string | null;
+  signupSource: string | null;
   modules: ModuleOption[];
 }) {
   const router = useRouter();
@@ -54,7 +56,12 @@ export function Onboarding({
       </div>
 
       {tab === 'create' ? (
-        <CreateForm suggestedName={suggestedName} modules={modules} onDone={() => router.push('/home')} />
+        <CreateForm
+          suggestedName={suggestedName}
+          modules={modules}
+          signupSource={signupSource}
+          onDone={() => router.push('/home')}
+        />
       ) : (
         <JoinForm initialCode={initialCode} onDone={() => router.push('/home')} />
       )}
@@ -65,10 +72,12 @@ export function Onboarding({
 function CreateForm({
   suggestedName,
   modules,
+  signupSource,
   onDone,
 }: {
   suggestedName: string;
   modules: ModuleOption[];
+  signupSource: string | null;
   onDone: () => void;
 }) {
   const [pending, start] = useTransition();
@@ -103,10 +112,16 @@ function CreateForm({
       onSubmit={(e) => {
         e.preventDefault();
         setError(null);
+        // Best-effort and never user-typed — sanitize rather than surface a
+        // validation error over a malformed or absent ref param.
+        const source = signupSource
+          ? signupSource.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 40) || undefined
+          : undefined;
         start(async () => {
           const res = await createHousehold({
             name, address, timezone,
             full_name: fullName, initials, modules: enabled,
+            signup_source: source,
           });
           if (res.ok) onDone();
           else setError(res.error);

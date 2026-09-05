@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "seed": "node --env-file=.env.local scripts/seed.mjs",
+    "set:platform-admin": "node --env-file=.env.local scripts/set-platform-admin.mjs",
     "gen:vapid": "node scripts/gen-vapid.mjs",
     "gen:secrets": "node scripts/gen-secrets.mjs",
     "typecheck": "tsc --noEmit",

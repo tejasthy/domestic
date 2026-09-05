@@ -1,14 +1,27 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { completeTurn, skipTurn, passTurn, undoTurn, flagChore, respondToSwap } from '@/lib/actions';
+import {
+  completeTurn, skipTurn, passTurn, undoTurn, flagChore, respondToSwap,
+  getAhead, deferTurn,
+} from '@/lib/actions';
+import { getCurrentPosition } from '@/lib/geolocation';
 import { Button, Card, Initials, Pill, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
 import { bucketFor } from '@/lib/rotation';
 import { formatInTimeZone } from '@/lib/timezone';
 import type { TurnCard as Turn } from '@/lib/types';
 
-function dueLabel(turn: Turn, timeZone: string) {
+function dueLabel(turn: Turn, timeZone: string, mine: boolean) {
+  if (turn.chore.cadence === 'standing') {
+    // A standing turn's assignee is shown separately via the Initials badge
+    // when it's not the viewer's — this pill only ever answers "is it mine
+    // right now", so it must not say "Your turn" for anyone else's turn.
+    return mine
+      ? { text: 'Your turn', tone: 'accent' as const }
+      : { text: 'Up now', tone: 'accent' as const };
+  }
+
   const bucket = bucketFor(turn.due_at, timeZone);
   if (bucket === 'anytime') return { text: 'Whenever', tone: 'neutral' as const };
   if (bucket === 'overdue') return { text: 'Overdue', tone: 'danger' as const };
@@ -26,28 +39,79 @@ function dueLabel(turn: Turn, timeZone: string) {
 export function TurnRow({
   turn,
   mine,
+  isOwnTurn,
   crossComplete = false,
+  isAdmin = false,
   timeZone,
   className,
+  geofenceEnabled = false,
+  getAheadEnabled = false,
 }: {
   turn: Turn;
+  /** Shows the primary Pass/Skip/Done controls. */
   mine: boolean;
+  /**
+   * Whether the viewer is the turn's assignee, for get-ahead/defer
+   * eligibility specifically — independent of `mine`. "Coming up for you"
+   * rows pass `mine={false}` on purpose (no premature complete/skip button
+   * for something not due yet) but are still the viewer's own turn, which is
+   * exactly what get-ahead/defer are for. Defaults to `mine` when omitted.
+   */
+  isOwnTurn?: boolean;
   /** Household setting: anyone can complete anyone's turn. */
   crossComplete?: boolean;
+  /** Whether the viewer is a household admin — required to pass or skip any turn. */
+  isAdmin?: boolean;
   timeZone: string;
   className?: string;
+  /** Household setting: completion must happen within a radius of home. */
+  geofenceEnabled?: boolean;
+  /** Household setting: get-ahead/defer is turned on. */
+  getAheadEnabled?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [settled, setSettled] = useState<'done' | 'skipped' | 'passed' | null>(null);
   const [undone, setUndone] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const due = dueLabel(turn, timeZone);
+  const due = dueLabel(turn, timeZone, mine);
   const canComplete = mine || crossComplete;
+  // Passing/skipping is admin-only, even for your own turn — it reshuffles
+  // the rotation, unlike completing it (just doing the chore).
+  const canSkipOrPass = isAdmin;
+  const ownTurn = isOwnTurn ?? mine;
+  // Get-ahead only makes sense before it's your turn (it trades places with
+  // whoever currently holds it); defer only makes sense once it is (it hands
+  // your current turn to the next person and takes their upcoming one).
+  const canGetAhead = ownTurn && !mine && getAheadEnabled && turn.chore.allow_get_ahead;
+  const canDefer = mine && getAheadEnabled && turn.chore.allow_defer;
+  const flaggedStanding = turn.chore.cadence === 'standing' && turn.flagged_at != null;
 
   function onComplete() {
     setError(null);
+    if (geofenceEnabled) {
+      start(async () => {
+        const geo = await getCurrentPosition();
+        if (!geo.ok) {
+          setError(
+            geo.reason === 'denied'
+              ? 'Location is blocked for this site — allow it in your browser settings and try again.'
+              : "Couldn't get your location — move somewhere with better signal and try again.",
+          );
+          return;
+        }
+        setSettled('done');
+        const res = await completeTurn(turn.id, undefined, { lat: geo.lat, lon: geo.lon });
+        if (!res.ok) {
+          setSettled(null);
+          setError(res.error);
+        }
+      });
+      return;
+    }
+
     // Optimistic: the row collapses immediately, because tapping "done" while
-    // standing at the sink should feel instant.
+    // standing at the sink should feel instant. Only safe when there is no
+    // geofence check that could still reject the completion server-side.
     setSettled('done');
     start(async () => {
       const res = await completeTurn(turn.id);
@@ -55,6 +119,22 @@ export function TurnRow({
         setSettled(null);
         setError(res.error);
       }
+    });
+  }
+
+  function onGetAhead() {
+    setError(null);
+    start(async () => {
+      const res = await getAhead(turn.chore_id);
+      if (!res.ok) setError(res.error);
+    });
+  }
+
+  function onDefer() {
+    setError(null);
+    start(async () => {
+      const res = await deferTurn(turn.id);
+      if (!res.ok) setError(res.error);
     });
   }
 
@@ -141,7 +221,7 @@ export function TurnRow({
   }
 
   return (
-    <Card className={cx('p-4', className)}>
+    <Card className={cx('p-4', flaggedStanding && 'border-l-2 border-l-maize bg-maize/[0.04]', className)}>
       <div className="flex items-start gap-3">
         <span className="text-2xl w-9 text-center shrink-0" aria-hidden>
           {turn.chore.emoji}
@@ -161,40 +241,74 @@ export function TurnRow({
                 {turn.assignee.full_name.split(' ')[0]}
               </span>
             )}
+            {flaggedStanding && (
+              <Pill tone="accent">
+                <Icon.Flag size={12} /> Flagged
+              </Pill>
+            )}
           </div>
         </div>
       </div>
 
-      {canComplete && (
-        <div className="flex items-center justify-end gap-2 mt-3.5 pt-3.5 border-t border-subtle">
+      <div className="flex items-center justify-end gap-2 mt-3.5 pt-3.5 border-t border-subtle">
+        {canGetAhead && (
           <button
             type="button"
-            onClick={onPass}
+            onClick={onGetAhead}
             disabled={pending}
-            aria-label={
-              mine
-                ? `Pass my turn for ${turn.chore.name} to the next person`
-                : `Pass ${turn.assignee.full_name.split(' ')[0]}'s turn for ${turn.chore.name} to the next person`
-            }
-            title="Pass — give this to the next person, same day"
+            aria-label={`Get ahead on ${turn.chore.name}`}
+            title="Get ahead — trade places with whoever's up now"
             className="w-11 h-11 grid place-items-center rounded-md text-ink-muted hover:bg-hover active:bg-sunken disabled:opacity-50"
           >
-            <Icon.Swap size={18} />
+            <Icon.FastForward size={18} />
           </button>
+        )}
+        {canDefer && (
           <button
             type="button"
-            onClick={onSkip}
+            onClick={onDefer}
             disabled={pending}
-            aria-label={
-              mine
-                ? `Skip my turn for ${turn.chore.name}`
-                : `Skip ${turn.assignee.full_name.split(' ')[0]}'s turn for ${turn.chore.name}`
-            }
-            title="Skip — no one does this one"
+            aria-label={`Defer ${turn.chore.name} to later`}
+            title="Defer — trade places with whoever's next"
             className="w-11 h-11 grid place-items-center rounded-md text-ink-muted hover:bg-hover active:bg-sunken disabled:opacity-50"
           >
-            <Icon.SkipForward size={18} />
+            <Icon.Clock size={18} />
           </button>
+        )}
+
+        {canSkipOrPass && (
+          <>
+            <button
+              type="button"
+              onClick={onPass}
+              disabled={pending}
+              aria-label={
+                mine
+                  ? `Pass my turn for ${turn.chore.name} to the next person`
+                  : `Pass ${turn.assignee.full_name.split(' ')[0]}'s turn for ${turn.chore.name} to the next person`
+              }
+              title="Pass — give this to the next person, same day"
+              className="w-11 h-11 grid place-items-center rounded-md text-ink-muted hover:bg-hover active:bg-sunken disabled:opacity-50"
+            >
+              <Icon.Swap size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={onSkip}
+              disabled={pending}
+              aria-label={
+                mine
+                  ? `Skip my turn for ${turn.chore.name}`
+                  : `Skip ${turn.assignee.full_name.split(' ')[0]}'s turn for ${turn.chore.name}`
+              }
+              title="Skip — no one does this one"
+              className="w-11 h-11 grid place-items-center rounded-md text-ink-muted hover:bg-hover active:bg-sunken disabled:opacity-50"
+            >
+              <Icon.SkipForward size={18} />
+            </button>
+          </>
+        )}
+        {canComplete && (
           <Button
             size="lg"
             onClick={onComplete}
@@ -208,11 +322,50 @@ export function TurnRow({
             <Icon.Check size={18} />
             {mine ? 'Done' : `For ${turn.assignee.full_name.split(' ')[0]}`}
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
       {error && <p className="t-body-sm text-danger mt-2">{error}</p>}
     </Card>
+  );
+}
+
+/**
+ * A standalone "get ahead" entry point for a chore, for when it isn't your
+ * turn yet — TurnRow only ever renders the chore's current up-next turn, so
+ * without this there'd be no way to act on a future turn that hasn't
+ * materialized into a card at all. Only shown when it isn't already your
+ * turn (TurnRow covers that case).
+ */
+export function GetAheadChip({ choreId, choreName }: { choreId: string; choreName: string }) {
+  const [pending, start] = useTransition();
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (done) {
+    return <p className="t-body-sm text-ink-muted px-4 py-2">Traded places — you&rsquo;re up now.</p>;
+  }
+
+  return (
+    <div className="px-4 py-2">
+      <button
+        type="button"
+        onClick={() => {
+          setError(null);
+          start(async () => {
+            const res = await getAhead(choreId);
+            if (res.ok) setDone(true);
+            else setError(res.error);
+          });
+        }}
+        disabled={pending}
+        className="flex items-center gap-1.5 t-body-sm font-medium text-accent disabled:opacity-50"
+      >
+        <Icon.FastForward size={16} />
+        {pending ? 'Getting ahead…' : `Get ahead on ${choreName}`}
+      </button>
+      {error && <p className="t-body-sm text-danger mt-1">{error}</p>}
+    </div>
   );
 }
 

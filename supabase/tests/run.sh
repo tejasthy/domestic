@@ -58,6 +58,21 @@ echo "  ok  pgcrypto in extensions + app role created (as in Supabase)"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0018_skip_and_undo_turn.sql" && echo "  ok  0018_skip_and_undo_turn.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0019_kiosk_undo_turn.sql" && echo "  ok  0019_kiosk_undo_turn.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0020_away_and_pass_turn.sql" && echo "  ok  0020_away_and_pass_turn.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0021_standing_chores.sql" && echo "  ok  0021_standing_chores.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0022_turn_flags.sql" && echo "  ok  0022_turn_flags.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0023_get_ahead_and_defer.sql" && echo "  ok  0023_get_ahead_and_defer.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0024_geofence.sql" && echo "  ok  0024_geofence.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0025_platform_admin_identity.sql" && echo "  ok  0025_platform_admin_identity.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0026_feedback.sql" && echo "  ok  0026_feedback.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0027_platform_stats.sql" && echo "  ok  0027_platform_stats.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0028_standing_chore_flag.sql" && echo "  ok  0028_standing_chore_flag.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0029_swap_get_ahead_defer.sql" && echo "  ok  0029_swap_get_ahead_defer.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0030_platform_admin_table.sql" && echo "  ok  0030_platform_admin_table.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0031_geofence_house_address.sql" && echo "  ok  0031_geofence_house_address.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0032_credit_assignee_in_activity_log.sql" && echo "  ok  0032_credit_assignee_in_activity_log.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0033_per_chore_advance_and_admin_pass_skip.sql" && echo "  ok  0033_per_chore_advance_and_admin_pass_skip.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0034_defer_chain_cap.sql" && echo "  ok  0034_defer_chain_cap.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0035_away_abuse_notice.sql" && echo "  ok  0035_away_abuse_notice.sql"
 
 # Only the auth-schema grants are left to do; everything in `public` came from
 # the default privileges set above, so 0004's column-level revoke still stands.
@@ -100,6 +115,16 @@ echo "── chore admin, recurring expenses, AI config ────────
 "${PSQL[@]}" < "$HERE/update_expense.sql"
 "${PSQL[@]}" < "$HERE/skip_and_undo_turn.sql"
 "${PSQL[@]}" < "$HERE/away_and_pass_turn.sql"
+
+echo
+echo "── standing chores, flags, get-ahead/defer, geofence, platform admin ──"
+"${PSQL[@]}" < "$HERE/standing_chores.sql"
+"${PSQL[@]}" < "$HERE/turn_flags.sql"
+"${PSQL[@]}" < "$HERE/get_ahead_and_defer.sql"
+"${PSQL[@]}" < "$HERE/geofence.sql"
+"${PSQL[@]}" < "$HERE/platform_admin.sql"
+"${PSQL[@]}" < "$HERE/credit_assignee.sql"
+"${PSQL[@]}" < "$HERE/away_abuse_notice.sql"
 
 echo
 echo "All database checks passed."

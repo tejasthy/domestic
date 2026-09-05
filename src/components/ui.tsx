@@ -251,3 +251,8 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   const base = cxOverride(cx(inputClass, 'pr-8'), props.className, ['w-', 'h-']);
   return <select {...props} className={cx(base, props.className)} />;
 }
+
+export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const base = cxOverride(cx(inputClass, 'h-auto min-h-24 py-2.5 resize-y'), props.className, ['w-', 'h-']);
+  return <textarea {...props} className={cx(base, props.className)} />;
+}

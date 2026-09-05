@@ -10,8 +10,9 @@ import { DEFAULT_MODULES, type ModuleKey } from '@/lib/modules';
 
 const TURN_SELECT = `
   id, chore_id, household_id, turn_number, assignee_id, status,
-  due_at, completed_at, completed_by, note, created_at,
-  chore:chores!inner ( id, name, emoji, cadence, description, days_of_week, interval_weeks ),
+  due_at, completed_at, completed_by, note, created_at, flagged_at,
+  completion_distance_m, completion_within_geofence,
+  chore:chores!inner ( id, name, emoji, cadence, description, days_of_week, interval_weeks, allow_get_ahead, allow_defer ),
   assignee:profiles!chore_turns_assignee_id_fkey ( id, full_name, initials, color )
 `;
 
@@ -277,6 +278,122 @@ export async function getInvites(): Promise<HouseholdInvite[]> {
   return data ?? [];
 }
 
+export type GetAheadSettings = {
+  enabled: boolean;
+  getAhead: { maxPer30d: number };
+  defer: { maxPer30d: number; maxChain: number };
+};
+
+const GET_AHEAD_DEFAULTS: Omit<GetAheadSettings, 'defer'> & { defer: { maxPer30d: number } } = {
+  enabled: true,
+  getAhead: { maxPer30d: 1 },
+  defer: { maxPer30d: 1 },
+};
+
+/**
+ * No row for this household means the feature is on with the defaults — the
+ * same fallback get_ahead()/defer_turn() apply server-side, kept in sync here
+ * so the settings screen and button-disabled states agree with the RPCs.
+ * defer.maxChain caps how many times a single turn can be handed off in a
+ * row (a defer chain can otherwise cascade through the whole rotation and
+ * back, forever) — it defaults to the household's own member count, same as
+ * the RPC, rather than a fixed number. Everything else is a plain
+ * rolling-30-day use count per person, since both directions are
+ * queue-position swaps, not completing/pushing a due date.
+ */
+export async function getGetAheadSettings(
+  householdId: string,
+  memberCount: number,
+): Promise<GetAheadSettings> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('household_modules')
+    .select('enabled, settings')
+    .eq('household_id', householdId)
+    .eq('module', 'get_ahead')
+    .maybeSingle<{ enabled: boolean; settings: Record<string, unknown> }>();
+
+  const defaultMaxChain = Math.max(memberCount, 1);
+  if (!data) return { ...GET_AHEAD_DEFAULTS, defer: { ...GET_AHEAD_DEFAULTS.defer, maxChain: defaultMaxChain } };
+
+  const settings = (data.settings ?? {}) as {
+    get_ahead?: { max_per_30d?: number };
+    defer?: { max_per_30d?: number; max_chain?: number };
+  };
+
+  return {
+    enabled: data.enabled ?? true,
+    getAhead: {
+      maxPer30d: settings.get_ahead?.max_per_30d ?? GET_AHEAD_DEFAULTS.getAhead.maxPer30d,
+    },
+    defer: {
+      maxPer30d: settings.defer?.max_per_30d ?? GET_AHEAD_DEFAULTS.defer.maxPer30d,
+      maxChain: settings.defer?.max_chain ?? defaultMaxChain,
+    },
+  };
+}
+
+/* ------------------------------------------------------------- away notices */
+
+export type AwayAbuseFlag = {
+  choreId: string;
+  choreName: string;
+  choreEmoji: string;
+  profileId: string;
+  profileName: string;
+  incidentCount: number;
+};
+
+/**
+ * Admin-only pattern detector: a chore/person pair where away has bypassed
+ * them, via distinct separate away periods, at least as many times as the
+ * household has members — see 0035_away_abuse_notice.sql. Not enforced
+ * automatically; this just surfaces it so an admin can decide.
+ */
+export async function getAwayAbuseFlags(): Promise<AwayAbuseFlag[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .rpc('get_away_abuse_flags')
+    .returns<{
+      chore_id: string; chore_name: string; chore_emoji: string;
+      profile_id: string; profile_name: string; incident_count: number;
+    }[]>();
+
+  return (data ?? []).map((row) => ({
+    choreId: row.chore_id,
+    choreName: row.chore_name,
+    choreEmoji: row.chore_emoji,
+    profileId: row.profile_id,
+    profileName: row.profile_name,
+    incidentCount: row.incident_count,
+  }));
+}
+
+export type LongAwayMember = { profileId: string; fullName: string; since: string };
+
+const LONG_AWAY_DAYS = 14;
+
+/**
+ * A single continuous away period is exactly what away is for, however long
+ * — this is just a "did you forget to clear this?" nudge for admins, not a
+ * flagged pattern. Unrelated to getAwayAbuseFlags above.
+ */
+export async function getLongAwayMembers(householdId: string): Promise<LongAwayMember[]> {
+  const supabase = await createClient();
+  const cutoff = new Date(Date.now() - LONG_AWAY_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await supabase
+    .from('member_away')
+    .select('profile_id, starts_at, profile:profiles!member_away_profile_id_fkey ( full_name )')
+    .eq('household_id', householdId)
+    .lte('starts_at', cutoff)
+    .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`)
+    .returns<{ profile_id: string; starts_at: string; profile: { full_name: string } | null }[]>();
+
+  return (data ?? [])
+    .filter((row) => row.profile)
+    .map((row) => ({ profileId: row.profile_id, fullName: row.profile!.full_name, since: row.starts_at }));
+}
+
 export async function getKioskDevices() {
   const supabase = await createClient();
   const { data } = await supabase
@@ -292,6 +409,34 @@ export async function getKioskDevices() {
  * that household — notFound() rather than an empty screen, so nothing leaks
  * about a component they chose not to run.
  */
+/* ------------------------------------------------------------ platform admin */
+
+/**
+ * Every function here is gated by is_platform_admin() inside the RPC itself
+ * (see supabase/migrations/0025 + 0027) — that's the real authorization
+ * boundary. The route-level gate in src/app/platform-admin/layout.tsx only
+ * controls whether the page exists; a non-admin calling these directly still
+ * gets refused by Postgres.
+ */
+export async function getPlatformStats() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc('platform_stats');
+  if (error) return null;
+  return (Array.isArray(data) ? data[0] : data) ?? null;
+}
+
+export async function getPlatformHouseholdsSummary(limit = 200) {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc('platform_households_summary', { p_limit: limit });
+  return data ?? [];
+}
+
+export async function getPlatformFeedback(limit = 100) {
+  const supabase = await createClient();
+  const { data } = await supabase.rpc('platform_feedback', { p_limit: limit });
+  return data ?? [];
+}
+
 export async function requireModule(key: ModuleKey) {
   const session = await getSession();
   if (!session?.me || !session.household) redirect('/login');
