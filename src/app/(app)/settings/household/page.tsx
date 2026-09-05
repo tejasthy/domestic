@@ -53,7 +53,7 @@ export default async function HouseholdSettingsPage() {
     getInvites(),
     getKioskDevices(),
     getAiConfigSummary(),
-    getGetAheadSettings(household.id),
+    getGetAheadSettings(household.id, members.length),
   ]);
   const openInvites = invites.filter(
     (i) =>

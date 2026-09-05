@@ -19,7 +19,7 @@ export default async function ChoresPage() {
     getUpNext(),
     getChoreStats(),
     getRecentlyDone(12),
-    getGetAheadSettings(household.id),
+    getGetAheadSettings(household.id, members.length),
     supabase
       .from('chore_rotation')
       .select('chore_id, profile_id, position')

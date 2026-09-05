@@ -33,7 +33,7 @@ export default async function TodayPage() {
     showChores ? getUpNext() : Promise.resolve([]),
     showMoney ? getBalances() : Promise.resolve<Record<string, number>>({}),
     showKiosk ? getKioskMessages() : Promise.resolve([]),
-    showChores ? getGetAheadSettings(household.id) : Promise.resolve(null),
+    showChores ? getGetAheadSettings(household.id, members.length) : Promise.resolve(null),
     supabase
       .from('chore_swaps')
       .select(`

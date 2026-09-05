@@ -284,10 +284,10 @@ export type GetAheadSettings = {
   defer: { maxPer30d: number; maxChain: number };
 };
 
-const GET_AHEAD_DEFAULTS: GetAheadSettings = {
+const GET_AHEAD_DEFAULTS: Omit<GetAheadSettings, 'defer'> & { defer: { maxPer30d: number } } = {
   enabled: true,
   getAhead: { maxPer30d: 1 },
-  defer: { maxPer30d: 1, maxChain: 3 },
+  defer: { maxPer30d: 1 },
 };
 
 /**
@@ -296,11 +296,15 @@ const GET_AHEAD_DEFAULTS: GetAheadSettings = {
  * so the settings screen and button-disabled states agree with the RPCs.
  * defer.maxChain caps how many times a single turn can be handed off in a
  * row (a defer chain can otherwise cascade through the whole rotation and
- * back, forever) — everything else is a plain rolling-30-day use count per
- * person, since both directions are queue-position swaps, not
- * completing/pushing a due date.
+ * back, forever) — it defaults to the household's own member count, same as
+ * the RPC, rather than a fixed number. Everything else is a plain
+ * rolling-30-day use count per person, since both directions are
+ * queue-position swaps, not completing/pushing a due date.
  */
-export async function getGetAheadSettings(householdId: string): Promise<GetAheadSettings> {
+export async function getGetAheadSettings(
+  householdId: string,
+  memberCount: number,
+): Promise<GetAheadSettings> {
   const supabase = await createClient();
   const { data } = await supabase
     .from('household_modules')
@@ -309,7 +313,8 @@ export async function getGetAheadSettings(householdId: string): Promise<GetAhead
     .eq('module', 'get_ahead')
     .maybeSingle<{ enabled: boolean; settings: Record<string, unknown> }>();
 
-  if (!data) return GET_AHEAD_DEFAULTS;
+  const defaultMaxChain = Math.max(memberCount, 1);
+  if (!data) return { ...GET_AHEAD_DEFAULTS, defer: { ...GET_AHEAD_DEFAULTS.defer, maxChain: defaultMaxChain } };
 
   const settings = (data.settings ?? {}) as {
     get_ahead?: { max_per_30d?: number };
@@ -323,7 +328,7 @@ export async function getGetAheadSettings(householdId: string): Promise<GetAhead
     },
     defer: {
       maxPer30d: settings.defer?.max_per_30d ?? GET_AHEAD_DEFAULTS.defer.maxPer30d,
-      maxChain: settings.defer?.max_chain ?? GET_AHEAD_DEFAULTS.defer.maxChain,
+      maxChain: settings.defer?.max_chain ?? defaultMaxChain,
     },
   };
 }

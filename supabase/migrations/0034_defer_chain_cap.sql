@@ -14,9 +14,11 @@
 -- specific person, or skip it — defer_turn stops being an option for it.
 --
 -- Configured the same way as the existing max_per_30d caps: household_modules
--- settings under the 'get_ahead' module, key defer.max_chain, default 3 —
--- generous enough that an occasional back-and-forth isn't blocked, but not
--- an unbounded hand-off chain.
+-- settings under the 'get_ahead' module, key defer.max_chain. Defaults to the
+-- household's own member count — a turn can cascade through everyone at most
+-- once before it must be completed, passed to someone specific, or skipped —
+-- rather than a flat number that means something different in a 2-person
+-- house than a 6-person one. Still admin-overridable to any explicit number.
 
 create or replace function defer_turn(p_turn uuid)
 returns chore_turns
@@ -39,6 +41,7 @@ declare
   uses_30d     int;
   max_chain    int;
   chain_count  int;
+  hh_size      int;
 begin
   select * into t from chore_turns where id = p_turn for update;
   if not found then raise exception 'turn not found'; end if;
@@ -55,7 +58,9 @@ begin
     from household_modules where household_id = c.household_id and module = 'get_ahead';
   if not coalesce(mod_enabled, true) then raise exception 'get-ahead/defer is turned off for this house'; end if;
   max_per_30d := coalesce((coalesce(mod_settings, '{}'::jsonb) #>> '{defer,max_per_30d}')::int, 1);
-  max_chain := coalesce((coalesce(mod_settings, '{}'::jsonb) #>> '{defer,max_chain}')::int, 3);
+
+  select count(*) into hh_size from profiles where household_id = c.household_id;
+  max_chain := coalesce((coalesce(mod_settings, '{}'::jsonb) #>> '{defer,max_chain}')::int, hh_size);
 
   select count(*) into uses_30d from chore_advance_log
    where chore_id = t.chore_id and profile_id = me and kind = 'defer'

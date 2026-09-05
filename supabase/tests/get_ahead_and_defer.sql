@@ -203,12 +203,12 @@ end $$;
 \echo '  ok  get_ahead respects the household on/off toggle'
 
 -- Back on, with a generous 30-day allowance, for the defer tests below.
--- defer.max_chain is deliberately low (2) so the cascade-cap test near the
--- end of this file doesn't need a long setup — every other defer test above
--- and below only defers a given turn once or twice, so this doesn't trip them.
+-- defer.max_chain is left unset, so it defaults to this household's own
+-- member count (4: OP/TP/3P/4P) — exercised directly by the cascade-cap
+-- test near the end of this file.
 insert into household_modules (household_id, module, enabled, settings)
 values ('2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b', 'get_ahead', true,
-        '{"get_ahead":{"max_per_30d":5},"defer":{"max_per_30d":5,"max_chain":2}}'::jsonb)
+        '{"get_ahead":{"max_per_30d":5},"defer":{"max_per_30d":5}}'::jsonb)
 on conflict (household_id, module) do update set enabled = excluded.enabled, settings = excluded.settings;
 
 /* =================================================================== defer */
@@ -340,20 +340,22 @@ end $$;
 -- Left unchecked, defer_turn can cascade forever: whoever holds a turn hands
 -- it to the next person in rotation, who can hand it off again, and so on —
 -- it even wraps back around and reuses an earlier deferrer's queued turn
--- instead of erroring. The chain cap (defer.max_chain, set to 2 above) stops
--- that: a single turn can only be deferred so many times, no matter who by,
--- before someone actually has to take it, pass it, or skip it.
+-- instead of erroring. The chain cap (defer.max_chain, defaulting to the
+-- household's own member count — 4 here — since no override is set above)
+-- stops that: a single turn can cascade through everyone at most once before
+-- someone actually has to take it, pass it, or skip it.
 
--- ChainX: on demand, rotation OP(0) > TP(1) > 3P(2).
+-- ChainX: on demand, rotation covering all four household members, so a full
+-- cascade (one hand-off per person) lines up exactly with the default cap.
 insert into chores (id, household_id, name, emoji, cadence, queue_depth)
 values ('2b3b2b3b-5555-5555-5555-555555555555','2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b',
         'ChainX','🔗','on_demand',1);
 
 insert into chore_rotation (chore_id, profile_id, position)
 select '2b3b2b3b-5555-5555-5555-555555555555', id,
-       case initials when 'OP' then 0 when 'TP' then 1 else 2 end
+       case initials when 'OP' then 0 when 'TP' then 1 when '3P' then 2 else 3 end
 from profiles
-where household_id = '2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b' and initials in ('OP','TP','3P');
+where household_id = '2b3b2b3b-2b3b-2b3b-2b3b-2b3b2b3b2b3b' and initials in ('OP','TP','3P','4P');
 
 select top_up_queue('2b3b2b3b-5555-5555-5555-555555555555');
 
@@ -366,27 +368,30 @@ begin
   select id into the_turn from chore_turns
   where chore_id = '2b3b2b3b-5555-5555-5555-555555555555' and status = 'pending';
 
-  -- OP defers to TP (chain count 0 -> 1).
+  -- OP -> TP -> 3P -> 4P, one defer each (chain count 0 -> 4, the default cap
+  -- for this 4-person household). 4P's defer wraps back around and reuses
+  -- OP's already-queued turn from the first hand-off, rather than erroring.
   perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000001', false);
   perform defer_turn(the_turn);
-
-  select p.initials into owner from chore_turns t join profiles p on p.id = t.assignee_id
-  where t.id = the_turn;
-  if owner <> 'TP' then raise exception 'FAIL: setup — turn should have cascaded to TP, got %', owner; end if;
-
-  -- TP defers to 3P (chain count 1 -> 2, right at the cap but not over it yet).
   perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000002', false);
+  perform defer_turn(the_turn);
+  perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000003', false);
+  perform defer_turn(the_turn);
+  perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000004', false);
   perform defer_turn(the_turn);
 
   select p.initials into owner from chore_turns t join profiles p on p.id = t.assignee_id
   where t.id = the_turn;
-  if owner <> '3P' then raise exception 'FAIL: setup — turn should have cascaded to 3P, got %', owner; end if;
+  if owner <> 'OP' then
+    raise exception 'FAIL: setup — four defers around a 4-person rotation should wrap back to OP, got %', owner;
+  end if;
 
   select count(*) into chain_n from chore_advance_log where turn_id = the_turn and kind = 'defer';
-  if chain_n <> 2 then raise exception 'FAIL: this turn should show 2 defers logged against it, got %', chain_n; end if;
+  if chain_n <> 4 then raise exception 'FAIL: this turn should show 4 defers logged against it, got %', chain_n; end if;
 
-  -- 3P tries to defer the same turn a third time — refused, cap is 2.
-  perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000003', false);
+  -- A fifth defer on the same turn — refused, cap is 4 (this household's
+  -- size). OP holds it now (from the wrap-around above), so OP is the caller.
+  perform set_config('request.user_id', '2b3b2b3b-0000-0000-0000-000000000001', false);
   begin
     perform defer_turn(the_turn);
     raise exception 'FAIL: defer_turn should refuse once a turn hits its chain cap';
@@ -397,9 +402,9 @@ begin
   -- The rejected attempt must not have changed anything.
   select p.initials into owner from chore_turns t join profiles p on p.id = t.assignee_id
   where t.id = the_turn;
-  if owner <> '3P' then raise exception 'FAIL: a refused defer must not reassign the turn'; end if;
+  if owner <> 'OP' then raise exception 'FAIL: a refused defer must not reassign the turn'; end if;
   if (select status from chore_turns where id = the_turn) <> 'pending' then
     raise exception 'FAIL: a refused defer must not change the turn''s status';
   end if;
 end $$;
-\echo '  ok  defer_turn caps how many times a single turn can be cascaded, regardless of who by'
+\echo '  ok  defer_turn caps a cascade at the household size by default, wrapping around once before blocking'
