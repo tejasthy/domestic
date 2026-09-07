@@ -176,7 +176,9 @@ export async function getExpenses(limit = 50): Promise<ExpenseWithSplits[]> {
       )
     `)
     .is('deleted_at', null)
-    .order('spent_on', { ascending: false })
+    // Most recently *added* first — `created_at`, not `spent_on` (a
+    // back-dated receipt shouldn't jump the list to wherever its date
+    // falls; it should show up where you added it, at the top).
     .order('created_at', { ascending: false })
     .order('position', { referencedTable: 'expense_items' })
     .limit(limit)

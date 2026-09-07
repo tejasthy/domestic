@@ -24,7 +24,7 @@ export default function KioskError({ error, reset }: { error: Error & { digest?:
   return (
     <main className="min-h-dvh grid place-items-center bg-page px-8 text-center">
       <div>
-        <Logo size={64} />
+        <Logo size={64} className="mx-auto" />
         <h1 className="t-title-lg text-ink mt-4">One sec…</h1>
         <p className="t-body-md text-ink-muted mt-2 max-w-sm">
           Reconnecting — this display retries on its own.

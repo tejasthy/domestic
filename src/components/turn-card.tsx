@@ -19,7 +19,7 @@ function dueLabel(turn: Turn, timeZone: string, mine: boolean) {
     // right now", so it must not say "Your turn" for anyone else's turn.
     return mine
       ? { text: 'Your turn', tone: 'accent' as const }
-      : { text: 'Up now', tone: 'accent' as const };
+      : { text: 'Next', tone: 'accent' as const };
   }
 
   const bucket = bucketFor(turn.due_at, timeZone);
