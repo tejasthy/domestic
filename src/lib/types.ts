@@ -211,6 +211,22 @@ export type Settlement = {
   created_at: string;
 };
 
+export type SettleNudgeRow = {
+  id: string;
+  household_id: string;
+  from_profile: string;
+  to_profile: string;
+  amount_cents: number;
+  created_at: string;
+  dismissed_at: string | null;
+};
+
+/** A "please settle up" ping the viewer received — from_profile is always
+ * the viewer (the one who owes), to_profile is whoever sent it. */
+export type SettleNudge = Omit<SettleNudgeRow, 'dismissed_at'> & {
+  sender: { full_name: string; initials: string; color: string };
+};
+
 export type PushSubscriptionRow = {
   id: string;
   profile_id: string;
@@ -342,6 +358,7 @@ export type Database = {
       recurring_expenses: Table<RecurringExpense>;
       recurring_expense_participants: Table<RecurringExpenseParticipant>;
       settlements: Table<Settlement>;
+      settle_nudges: Table<SettleNudgeRow>;
       push_subscriptions: Table<PushSubscriptionRow>;
       kiosk_devices: Table<KioskDevice>;
       household_invites: Table<HouseholdInvite>;

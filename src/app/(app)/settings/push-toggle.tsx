@@ -2,16 +2,10 @@
 
 import { useState, useSyncExternalStore, useTransition } from 'react';
 import { savePushSubscription, updatePreferences } from '@/lib/actions';
+import { subscribeToPush } from '@/lib/push-client';
+import { isStandalone } from '@/lib/pwa';
 import { Button, Card } from '@/components/ui';
 import { Icon } from '@/components/brand';
-
-/** VAPID keys travel as base64url; PushManager wants raw bytes. */
-function urlBase64ToUint8Array(base64: string) {
-  const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
-  const normal = padded.replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(normal);
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
-}
 
 type Capability = 'checking' | 'unsupported' | 'needs-install' | 'blocked' | 'available';
 
@@ -20,10 +14,7 @@ function detectCapability(): Capability {
     // iOS only exposes PushManager to home-screen installs, so distinguish
     // "your browser can't" from "you haven't added it to your Home Screen".
     const iOS = /iP(hone|ad|od)/.test(navigator.userAgent);
-    const standalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
-      (navigator as unknown as { standalone?: boolean }).standalone === true;
-    return iOS && !standalone ? 'needs-install' : 'unsupported';
+    return iOS && !isStandalone() ? 'needs-install' : 'unsupported';
   }
   return Notification.permission === 'denied' ? 'blocked' : 'available';
 }
@@ -60,38 +51,22 @@ export function PushToggle({
 
   async function enable() {
     setError(null);
-    if (!vapidKey) {
-      setError('Push keys are not configured on the server yet.');
+    const res = await subscribeToPush(vapidKey);
+    if (!res.ok) {
+      if (res.reason !== 'permission-denied') setError(res.message ?? 'Could not subscribe.');
       return;
     }
 
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') return;
-
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+    start(async () => {
+      const saved = await savePushSubscription({
+        endpoint: res.endpoint,
+        keys: res.keys,
+        userAgent: navigator.userAgent,
       });
-      const json = sub.toJSON() as {
-        endpoint: string;
-        keys: { p256dh: string; auth: string };
-      };
-
-      start(async () => {
-        const saved = await savePushSubscription({
-          endpoint: json.endpoint,
-          keys: json.keys,
-          userAgent: navigator.userAgent,
-        });
-        if (!saved.ok) return setError(saved.error);
-        await updatePreferences({ notify_push: true });
-        setSubscribed(true);
-      });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not subscribe.');
-    }
+      if (!saved.ok) return setError(saved.error);
+      await updatePreferences({ notify_push: true });
+      setSubscribed(true);
+    });
   }
 
   function disable() {

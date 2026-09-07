@@ -6,6 +6,7 @@ import { TabBar, SideNav } from '@/components/nav';
 import { Initials } from '@/components/ui';
 import { RegisterServiceWorker } from '@/components/register-sw';
 import { InstallPrompt } from '@/components/install-prompt';
+import { PushPrompt } from '@/components/push-prompt';
 import { Intro } from '@/components/intro';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -65,6 +66,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
       <TabBar modules={session.modules} />
       <InstallPrompt />
+      <PushPrompt vapidKey={process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ''} />
     </div>
   );
 }

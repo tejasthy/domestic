@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { getSession, getChores, getOpenTurns, getUpNext, getBalances, getKioskMessages, getGetAheadSettings } from '@/lib/data';
+import { getSession, getChores, getOpenTurns, getUpNext, getBalances, getKioskMessages, getGetAheadSettings, getSettleNudges } from '@/lib/data';
 import { TurnRow, FlagButton, SwapRequestRow } from '@/components/turn-card';
+import { SettleNudgeCard } from '@/app/(app)/expenses/settle-up';
 import { KioskNote } from '@/components/kiosk-note';
 import { Card, EmptyState, SectionHeader, Initials } from '@/components/ui';
 import { formatCents } from '@/lib/money';
@@ -27,13 +28,14 @@ export default async function TodayPage() {
   const showKiosk = modules.includes('kiosk');
 
   const supabase = await createClient();
-  const [chores, turns, upNext, balances, kioskMessages, getAheadSettings, { data: swaps }] = await Promise.all([
+  const [chores, turns, upNext, balances, kioskMessages, getAheadSettings, settleNudges, { data: swaps }] = await Promise.all([
     showChores ? getChores() : Promise.resolve([]),
     showChores ? getOpenTurns() : Promise.resolve([]),
     showChores ? getUpNext() : Promise.resolve([]),
     showMoney ? getBalances() : Promise.resolve<Record<string, number>>({}),
     showKiosk ? getKioskMessages() : Promise.resolve([]),
     showChores ? getGetAheadSettings(household.id, members.length) : Promise.resolve(null),
+    showMoney ? getSettleNudges(me.id) : Promise.resolve([]),
     supabase
       .from('chore_swaps')
       .select(`
@@ -79,7 +81,7 @@ export default async function TodayPage() {
         </p>
       </header>
 
-      {(swaps ?? []).length > 0 && (
+      {((swaps ?? []).length > 0 || settleNudges.length > 0) && (
         <section>
           <SectionHeader title="Needs an answer" />
           <div className="space-y-3">
@@ -90,6 +92,16 @@ export default async function TodayPage() {
                 choreName={s.turn.chore.name}
                 fromName={s.requester.full_name.split(' ')[0]}
                 message={s.message}
+              />
+            ))}
+            {settleNudges.map((n) => (
+              <SettleNudgeCard
+                key={n.id}
+                nudgeId={n.id}
+                fromId={me.id}
+                toId={n.to_profile}
+                amountCents={n.amount_cents}
+                senderName={n.sender.full_name.split(' ')[0]}
               />
             ))}
           </div>
