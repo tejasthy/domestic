@@ -63,7 +63,9 @@ begin
   if (select flagged_at from chore_turns where id = the_turn) is not null then
     raise exception 'FAIL: flag_on_demand should not touch flagged_at for an on_demand chore';
   end if;
-  if (select count(*) from activity_log where verb = 'flagged_chore') <> 1 then
+  if (select count(*) from activity_log
+      where verb = 'flagged_chore'
+        and household_id = '1a2a1a2a-1a2a-1a2a-1a2a-1a2a1a2a1a2a') <> 1 then
     raise exception 'FAIL: flagging did not write an activity entry';
   end if;
 end $$;

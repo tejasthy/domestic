@@ -29,7 +29,7 @@ export default async function KioskPage({
     return (
       <main className="min-h-dvh grid place-items-center bg-page px-8 text-center">
         <div>
-          <Logo size={64} />
+          <Logo size={64} className="mx-auto" />
           <h1 className="t-title-lg text-ink mt-4">Kiosk not paired</h1>
           <p className="t-body-md text-ink-muted mt-2 max-w-sm">
             {error === 'bad_token'
@@ -157,7 +157,7 @@ export default async function KioskPage({
                           // assignee's name is already shown below the tile,
                           // so this never says "Your turn" the way the app's
                           // own per-viewer card can.
-                          : standing ? 'Up now'
+                          : standing ? 'Next'
                           : bucket === 'overdue' ? 'Overdue'
                           : bucket === 'today' ? 'Today'
                           : 'Whenever'}

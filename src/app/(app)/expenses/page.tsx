@@ -4,7 +4,7 @@ import { Card, SectionHeader, Initials, LinkButton, EmptyState, Pill } from '@/c
 import { Icon } from '@/components/brand';
 import { formatCents, simplifyDebts } from '@/lib/money';
 import { formatCalendarDate } from '@/lib/timezone';
-import { SettleUpButton } from './settle-up';
+import { SettleUpButton, NudgeButton } from './settle-up';
 import { ExpenseRowActions } from './expense-row-actions';
 import { SettlementRowActions } from './settlement-row-actions';
 
@@ -96,13 +96,18 @@ export default async function ExpensesPage() {
         <section>
           <SectionHeader title={`Settle up · ${transfers.length} transfer${transfers.length === 1 ? '' : 's'}`} />
           <div className="space-y-2">
-            {transfers.map((t, i) => {
+            {transfers.map((t) => {
               const from = byId.get(t.from);
               const to = byId.get(t.to);
               if (!from || !to) return null;
               const involvesMe = t.from === me.id || t.to === me.id;
               return (
-                <Card key={i} className={`p-3.5 ${involvesMe ? 'border-maize' : ''}`}>
+                // Keyed by the pair, not array position — settling one
+                // transfer reshuffles the minimal-transfer set, and an
+                // index key would let a just-settled row's "Recorded" state
+                // bleed onto a completely different, still-unpaid pair that
+                // happens to shift into the same slot.
+                <Card key={`${t.from}-${t.to}`} className={`p-3.5 ${involvesMe ? 'border-maize' : ''}`}>
                   <div className="flex items-center gap-3">
                     <Initials initials={from.initials} color={from.color} size="md" />
                     <span className="text-ink-muted" aria-hidden>→</span>
@@ -117,11 +122,18 @@ export default async function ExpensesPage() {
                       </p>
                     </div>
                     {involvesMe && (
-                      <SettleUpButton
-                        fromId={t.from}
-                        toId={t.to}
-                        amount={(t.cents / 100).toFixed(2)}
-                      />
+                      <div className="flex flex-col items-end gap-1.5">
+                        <SettleUpButton
+                          fromId={t.from}
+                          toId={t.to}
+                          amount={(t.cents / 100).toFixed(2)}
+                        />
+                        {/* Only the person owed can ask for the money —
+                            nudging your own debt away makes no sense. */}
+                        {t.to === me.id && (
+                          <NudgeButton fromId={t.from} amountCents={t.cents} />
+                        )}
+                      </div>
                     )}
                   </div>
                 </Card>

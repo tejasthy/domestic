@@ -740,6 +740,52 @@ export async function deleteSettlement(settlementId: string): Promise<ActionResu
   return { ok: true };
 }
 
+/** A nudge, not a ledger entry — pings whoever owes money on a "Settle up"
+ * transfer to go pay it. Only the person owed can send one, for the same
+ * reason only they get the "Mark paid" button on that row. */
+export async function requestSettleUp(
+  fromProfileId: string,
+  amountCents: number,
+): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'Not signed in.' };
+  if (fromProfileId === user.id) return { ok: false, error: "You can't nudge yourself." };
+  if (!Number.isInteger(amountCents) || amountCents <= 0) {
+    return { ok: false, error: 'Invalid amount.' };
+  }
+
+  const { data: me } = await supabase
+    .from('profiles').select('household_id, full_name').eq('id', user.id)
+    .single<{ household_id: string; full_name: string }>();
+  if (!me?.household_id) return { ok: false, error: 'No household.' };
+
+  const { data: debtor } = await supabase
+    .from('profiles').select('household_id, full_name').eq('id', fromProfileId)
+    .single<{ household_id: string; full_name: string }>();
+  if (!debtor || debtor.household_id !== me.household_id) {
+    return { ok: false, error: 'That person is not in your household.' };
+  }
+
+  const amount = `$${(amountCents / 100).toFixed(2)}`;
+  await notifyProfiles([fromProfileId], {
+    title: `${me.full_name.split(' ')[0]} nudged you`,
+    body: `You owe ${me.full_name.split(' ')[0]} ${amount} — settle up when you get a chance.`,
+    url: '/expenses',
+    tag: `settle-nudge-${user.id}-${fromProfileId}`,
+  });
+
+  await supabase.from('activity_log').insert({
+    household_id: me.household_id,
+    actor_id: user.id,
+    verb: 'requested_settlement',
+    summary: `${me.full_name} nudged ${debtor.full_name} to settle up — ${amount}`,
+    metadata: { from_profile: fromProfileId, to_profile: user.id, amount_cents: amountCents },
+  });
+
+  return { ok: true };
+}
+
 /* ------------------------------------------------------------- preferences */
 
 export async function savePushSubscription(sub: {

@@ -126,3 +126,95 @@ begin
   end if;
 end $$;
 \echo '  ok  skip_turn and its undo behave the same way on a standing chore'
+
+-- ------------------------------------------------ cadence switch preserves queue
+
+-- Trash bag: on_demand, queue_depth 3, rotation OP(0) > TP(1).
+insert into chores (id, household_id, name, emoji, cadence, queue_depth)
+values ('77777777-2222-2222-2222-222222222222','77777777-7777-7777-7777-777777777777',
+        'Trash bag','🗑️','on_demand',3);
+
+insert into chore_rotation (chore_id, profile_id, position)
+select '77777777-2222-2222-2222-222222222222', id,
+       case initials when 'OP' then 0 else 1 end
+from profiles where household_id = '77777777-7777-7777-7777-777777777777';
+
+do $$
+declare
+  current_turn uuid;
+  pending_count int;
+begin
+  perform top_up_queue('77777777-2222-2222-2222-222222222222');
+
+  select count(*) into pending_count from chore_turns
+  where chore_id = '77777777-2222-2222-2222-222222222222' and status = 'pending';
+  if pending_count <> 3 then
+    raise exception 'FAIL: setup wrong — expected queue_depth=3 pending turns, got %', pending_count;
+  end if;
+
+  select id into current_turn from chore_turns
+  where chore_id = '77777777-2222-2222-2222-222222222222' and status = 'pending'
+  order by turn_number limit 1;
+
+  -- Flag it, same as "dishwasher's full" — the current turn is now due.
+  perform flag_on_demand('77777777-2222-2222-2222-222222222222');
+  if (select due_at from chore_turns where id = current_turn) is null then
+    raise exception 'FAIL: setup wrong — flag_on_demand did not stamp the current turn';
+  end if;
+
+  -- Switching to standing must keep that exact turn — not wipe the queue
+  -- and hand a fresh, unflagged turn to whoever the rotation math lands on.
+  perform update_chore('77777777-2222-2222-2222-222222222222', p_cadence := 'standing'::chore_cadence, p_queue_depth := 1::smallint);
+
+  select count(*) into pending_count from chore_turns
+  where chore_id = '77777777-2222-2222-2222-222222222222' and status = 'pending';
+  if pending_count <> 1 then
+    raise exception 'FAIL: switching on_demand -> standing should leave exactly one pending turn (got %)', pending_count;
+  end if;
+
+  if not exists (select 1 from chore_turns where id = current_turn and status = 'pending') then
+    raise exception 'FAIL: switching to standing deleted and replaced the already-flagged current turn instead of keeping it';
+  end if;
+
+  if (select due_at from chore_turns where id = current_turn) is null then
+    raise exception 'FAIL: the current turn''s flagged due_at was lost across the cadence switch';
+  end if;
+end $$;
+\echo '  ok  switching on_demand -> standing keeps the current (even already-flagged) turn instead of resetting the queue'
+
+do $$
+declare pending_count int;
+begin
+  -- Switching back to on_demand with a bigger depth should top up from the
+  -- single surviving turn, not start the rotation over from position 0.
+  perform update_chore('77777777-2222-2222-2222-222222222222', p_cadence := 'on_demand'::chore_cadence, p_queue_depth := 3::smallint);
+
+  select count(*) into pending_count from chore_turns
+  where chore_id = '77777777-2222-2222-2222-222222222222' and status = 'pending';
+  if pending_count <> 3 then
+    raise exception 'FAIL: switching standing -> on_demand(3) should top up to 3 pending turns (got %)', pending_count;
+  end if;
+
+  -- Shrinking the queue depth should drop the furthest-out turns and keep
+  -- the ones closest to being up.
+  perform update_chore('77777777-2222-2222-2222-222222222222', p_queue_depth := 2::smallint);
+
+  select count(*) into pending_count from chore_turns
+  where chore_id = '77777777-2222-2222-2222-222222222222' and status = 'pending';
+  if pending_count <> 2 then
+    raise exception 'FAIL: shrinking queue_depth to 2 should leave exactly 2 pending turns (got %)', pending_count;
+  end if;
+
+  if exists (
+    select 1 from chore_turns
+    where chore_id = '77777777-2222-2222-2222-222222222222' and status = 'pending'
+    and turn_number > (
+      select turn_number from chore_turns
+      where chore_id = '77777777-2222-2222-2222-222222222222' and status = 'pending'
+      order by turn_number limit 1 offset 1
+    )
+  ) then
+    raise exception 'FAIL: shrinking the queue should drop the furthest-out turns, not the closest ones';
+  end if;
+end $$;
+\echo '  ok  resizing an on_demand queue tops up or trims instead of wiping it'

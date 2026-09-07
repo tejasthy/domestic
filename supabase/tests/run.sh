@@ -73,6 +73,7 @@ echo "  ok  pgcrypto in extensions + app role created (as in Supabase)"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0033_per_chore_advance_and_admin_pass_skip.sql" && echo "  ok  0033_per_chore_advance_and_admin_pass_skip.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0034_defer_chain_cap.sql" && echo "  ok  0034_defer_chain_cap.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0035_away_abuse_notice.sql" && echo "  ok  0035_away_abuse_notice.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0036_preserve_queue_on_cadence_switch.sql" && echo "  ok  0036_preserve_queue_on_cadence_switch.sql"
 
 # Only the auth-schema grants are left to do; everything in `public` came from
 # the default privileges set above, so 0004's column-level revoke still stands.

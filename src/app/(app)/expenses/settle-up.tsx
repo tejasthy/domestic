@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { recordPayment, deleteSettlement } from '@/lib/actions';
+import { recordPayment, deleteSettlement, requestSettleUp } from '@/lib/actions';
 import { Button } from '@/components/ui';
+import { Icon } from '@/components/brand';
 
 /** Records a Venmo that already happened — it does not move any money. */
 export function SettleUpButton({
@@ -20,7 +21,10 @@ export function SettleUpButton({
   if (settlementId) {
     return (
       <div className="flex items-center gap-2">
-        <span className="t-body-sm text-success font-medium">Recorded</span>
+        <span className="flex items-center gap-1 t-body-sm text-success font-medium">
+          <Icon.Check size={16} />
+          Recorded
+        </span>
         <button
           type="button"
           className="t-body-sm text-accent font-medium"
@@ -60,5 +64,38 @@ export function SettleUpButton({
     >
       Mark paid
     </Button>
+  );
+}
+
+/** A push-notification poke at whoever owes you — reminds, doesn't move
+ * money. Only makes sense from the creditor's side of a transfer. */
+export function NudgeButton({ fromId, amountCents }: { fromId: string; amountCents: number }) {
+  const [pending, start] = useTransition();
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (sent) {
+    return <span className="t-body-sm text-ink-muted">Nudged</span>;
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => {
+          setError(null);
+          start(async () => {
+            const res = await requestSettleUp(fromId, amountCents);
+            if (res.ok) setSent(true);
+            else setError(res.error);
+          });
+        }}
+        className="t-body-sm text-accent font-medium disabled:opacity-50"
+      >
+        {pending ? 'Nudging…' : 'Nudge'}
+      </button>
+      {error && <span className="t-body-sm text-danger">{error}</span>}
+    </div>
   );
 }
