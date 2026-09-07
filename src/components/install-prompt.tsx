@@ -3,16 +3,14 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Button, Card } from '@/components/ui';
 import { Logo } from '@/components/brand';
+import { isStandalone } from '@/lib/pwa';
 
 /* ---------------------------------------------------------------- detection */
 
 type Platform = 'ssr' | 'installed' | 'ios' | 'android' | 'desktop';
 
 function detectPlatform(): Platform {
-  const standalone =
-    window.matchMedia('(display-mode: standalone)').matches ||
-    (navigator as unknown as { standalone?: boolean }).standalone === true;
-  if (standalone) return 'installed';
+  if (isStandalone()) return 'installed';
 
   const ua = navigator.userAgent;
   // iPadOS 13+ Safari sends a Macintosh UA with no "iPad" token, so an iPad
@@ -33,12 +31,17 @@ function usePlatform(): Platform {
   );
 }
 
-/** Dismissal is per-device on purpose: installing is a per-device act. */
-const DISMISS_KEY = 'domestic.install.dismissed';
+/** Dismissal is per-device on purpose: installing is a per-device act. It's
+ * also temporary — until the app is actually installed, notifications don't
+ * work at all on iOS, so "not now" should mean "ask me again later," not
+ * "never mention this again." */
+const DISMISS_KEY = 'domestic.install.dismissed-until';
+const DISMISS_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
 
 function readDismissed(): boolean {
   try {
-    return localStorage.getItem(DISMISS_KEY) === '1';
+    const until = Number(localStorage.getItem(DISMISS_KEY));
+    return Number.isFinite(until) && Date.now() < until;
   } catch {
     // Private windows and blocked site data throw on access.
     return false;
@@ -78,7 +81,7 @@ export function InstallPrompt() {
   function dismiss() {
     setJustDismissed(true);
     try {
-      localStorage.setItem(DISMISS_KEY, '1');
+      localStorage.setItem(DISMISS_KEY, String(Date.now() + DISMISS_COOLDOWN_MS));
     } catch {
       // Nothing to do — it just reappears next visit.
     }

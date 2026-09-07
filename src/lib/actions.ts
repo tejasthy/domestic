@@ -726,6 +726,15 @@ export async function recordPayment(
     });
   }
 
+  // A payment between this pair clears whatever nudges were asking for it —
+  // no reason for the "settle up" card to linger once it's actually done.
+  await supabase
+    .from('settle_nudges')
+    .update({ dismissed_at: new Date().toISOString() })
+    .eq('from_profile', from_profile)
+    .eq('to_profile', to_profile)
+    .is('dismissed_at', null);
+
   revalidatePath('/', 'layout');
   return { ok: true, id: settlement.id };
 }
@@ -768,6 +777,18 @@ export async function requestSettleUp(
   }
 
   const amount = `$${(amountCents / 100).toFixed(2)}`;
+
+  // In-app: a real row the recipient's own client queries, same shape as
+  // chore_swaps — a push notification alone is easy to miss and useless if
+  // they don't have push enabled on this device.
+  const { error: nudgeError } = await supabase.from('settle_nudges').insert({
+    household_id: me.household_id,
+    from_profile: fromProfileId,
+    to_profile: user.id,
+    amount_cents: amountCents,
+  });
+  if (nudgeError) return { ok: false, error: nudgeError.message };
+
   await notifyProfiles([fromProfileId], {
     title: `${me.full_name.split(' ')[0]} nudged you`,
     body: `You owe ${me.full_name.split(' ')[0]} ${amount} — settle up when you get a chance.`,
@@ -783,6 +804,21 @@ export async function requestSettleUp(
     metadata: { from_profile: fromProfileId, to_profile: user.id, amount_cents: amountCents },
   });
 
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+/** Clears a settle-up nudge without necessarily having paid — "seen it,
+ * dealing with it," same shape as declining a swap. RLS restricts this to
+ * the nudge's own recipient. */
+export async function dismissSettleNudge(nudgeId: string): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('settle_nudges')
+    .update({ dismissed_at: new Date().toISOString() })
+    .eq('id', nudgeId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath('/', 'layout');
   return { ok: true };
 }
 

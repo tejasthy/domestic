@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import type {
   ActivityEntry, Balance, Chore, Expense, ExpenseSplit, ExpenseItem, ExpenseItemSplit,
   Household, HouseholdInvite, KioskMessage, MemberAwayRow, Profile, RecurringExpense,
-  RecurringExpenseParticipant, Settlement, TurnCard,
+  RecurringExpenseParticipant, Settlement, SettleNudge, TurnCard,
 } from '@/lib/types';
 import { DEFAULT_MODULES, type ModuleKey } from '@/lib/modules';
 
@@ -244,6 +244,20 @@ export async function getSettlements(limit = 20): Promise<Settlement[]> {
     .order('settled_on', { ascending: false })
     .limit(limit)
     .returns<Settlement[]>();
+  return data ?? [];
+}
+
+/** Pending "please settle up" nudges sent to this profile — not yet
+ * dismissed, and not yet cleared by a payment recordPayment matched them to. */
+export async function getSettleNudges(profileId: string): Promise<SettleNudge[]> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('settle_nudges')
+    .select('id, household_id, from_profile, to_profile, amount_cents, created_at, sender:profiles!settle_nudges_to_profile_fkey ( full_name, initials, color )')
+    .eq('from_profile', profileId)
+    .is('dismissed_at', null)
+    .order('created_at', { ascending: false })
+    .returns<SettleNudge[]>();
   return data ?? [];
 }
 
