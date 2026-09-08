@@ -10,16 +10,22 @@ import { Logo } from '@/components/brand';
  * to dismiss. Self-heal instead: retry on a short timer until the transient
  * failure clears.
  */
-export default function KioskError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function KioskError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
   useEffect(() => {
-    const id = setTimeout(reset, 5000);
+    const id = setTimeout(retry, 5000);
     return () => clearTimeout(id);
-    // `reset`'s identity is stable for the life of the error boundary, so it
+    // `retry`'s identity is stable for the life of the error boundary, so it
     // never re-triggers this effect. Depend on `error` instead — a fresh
     // crash is a new Error instance, which re-arms the timer for the next
     // attempt. Without this, a single failed retry leaves the display stuck
     // forever with no timer left running.
-  }, [error, reset]);
+    //
+    // Must be `retry`, not `reset`: the crash happens inside KioskPage's own
+    // Server Component data fetch, and `reset()` only clears the error state
+    // and re-renders the same (still-failed) tree without re-fetching — it
+    // can't recover from a Server Component error. `retry()` actually
+    // re-fetches the segment, which is what "retries on its own" requires.
+  }, [error, retry]);
 
   return (
     <main className="min-h-dvh grid place-items-center bg-page px-8 text-center">
