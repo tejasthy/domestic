@@ -7,7 +7,7 @@
 -- statement is idempotent, so running this again is a no-op — you do not need
 -- to track which migrations you have already applied.
 --
--- Contains: 0001_init.sql, 0002_logic.sql, 0003_invites_and_oauth.sql, 0004_multi_household.sql, 0005_modules.sql, 0006_devices.sql, 0007_intro.sql, 0008_pgcrypto_schema.sql, 0009_chore_admin.sql, 0010_recurring_expenses.sql, 0011_ai_config.sql, 0012_kiosk_interactivity.sql, 0013_split_adjustment.sql, 0014_expense_items.sql, 0015_lock_kiosk_rpcs_from_anon.sql, 0016_kiosk_dismiss_message.sql, 0017_update_expense.sql, 0018_skip_and_undo_turn.sql, 0019_kiosk_undo_turn.sql, 0020_away_and_pass_turn.sql, 0021_standing_chores.sql, 0022_turn_flags.sql, 0023_get_ahead_and_defer.sql, 0024_geofence.sql, 0025_platform_admin_identity.sql, 0026_feedback.sql, 0027_platform_stats.sql, 0028_standing_chore_flag.sql, 0029_swap_get_ahead_defer.sql, 0030_platform_admin_table.sql, 0031_geofence_house_address.sql, 0032_credit_assignee_in_activity_log.sql, 0033_per_chore_advance_and_admin_pass_skip.sql, 0034_defer_chain_cap.sql, 0035_away_abuse_notice.sql
+-- Contains: 0001_init.sql, 0002_logic.sql, 0003_invites_and_oauth.sql, 0004_multi_household.sql, 0005_modules.sql, 0006_devices.sql, 0007_intro.sql, 0008_pgcrypto_schema.sql, 0009_chore_admin.sql, 0010_recurring_expenses.sql, 0011_ai_config.sql, 0012_kiosk_interactivity.sql, 0013_split_adjustment.sql, 0014_expense_items.sql, 0015_lock_kiosk_rpcs_from_anon.sql, 0016_kiosk_dismiss_message.sql, 0017_update_expense.sql, 0018_skip_and_undo_turn.sql, 0019_kiosk_undo_turn.sql, 0020_away_and_pass_turn.sql, 0021_standing_chores.sql, 0022_turn_flags.sql, 0023_get_ahead_and_defer.sql, 0024_geofence.sql, 0025_platform_admin_identity.sql, 0026_feedback.sql, 0027_platform_stats.sql, 0028_standing_chore_flag.sql, 0029_swap_get_ahead_defer.sql, 0030_platform_admin_table.sql, 0031_geofence_house_address.sql, 0032_credit_assignee_in_activity_log.sql, 0033_per_chore_advance_and_admin_pass_skip.sql, 0034_defer_chain_cap.sql, 0035_away_abuse_notice.sql, 0036_preserve_queue_on_cadence_switch.sql, 0037_settle_nudges.sql, 0038_kiosk_broadcast.sql
 
 /**************************************************************************
  * 0001_init.sql
@@ -7086,5 +7086,312 @@ begin
   from profiles p where p.id = t.assignee_id;
 
   return t;
+end;
+$$;
+
+
+/**************************************************************************
+ * 0036_preserve_queue_on_cadence_switch.sql
+ *************************************************************************/
+
+-- update_chore (0033) treated ANY cadence-affecting change the same way:
+-- delete every pending turn, then rebuild from scratch. That is right when
+-- crossing into or out of `scheduled` (a due-date pattern means something
+-- different under the new rule, so nothing is worth keeping turn-by-turn),
+-- but wrong for on_demand <-> standing — 0021 already documented standing as
+-- "on_demand's queue model with queue_depth pinned to 1", so switching
+-- between them, or resizing an on_demand queue, should keep whoever is
+-- already queued (and any flag/due-date already stamped on the current
+-- turn) instead of bumping everyone back to the front of the rotation.
+
+create or replace function update_chore(
+  p_chore           uuid,
+  p_name            text default null,
+  p_emoji           text default null,
+  p_description     text default null,
+  p_cadence         chore_cadence default null,
+  p_days_of_week    smallint[] default null,
+  p_interval_weeks  smallint default null,
+  p_due_hour        smallint default null,
+  p_queue_depth     smallint default null,
+  p_lookahead_days  smallint default null,
+  p_sort_order      smallint default null,
+  p_allow_get_ahead boolean default null,
+  p_allow_defer     boolean default null
+)
+returns chores
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  hh                uuid;
+  before            chores%rowtype;
+  after             chores%rowtype;
+  schedule_relevant boolean;
+  queue_relevant    boolean;
+begin
+  if not is_household_admin() then raise exception 'only an admin can edit a chore'; end if;
+  select household_id into hh from profiles where id = auth.uid();
+
+  select * into before from chores where id = p_chore and household_id = hh;
+  if not found then raise exception 'that chore is not in your household'; end if;
+
+  update chores set
+    name             = coalesce(nullif(trim(p_name), ''), name),
+    emoji            = coalesce(nullif(trim(p_emoji), ''), emoji),
+    description      = case when p_description is not null
+                            then nullif(trim(p_description), '') else description end,
+    cadence          = coalesce(p_cadence, cadence),
+    days_of_week     = coalesce(p_days_of_week, days_of_week),
+    interval_weeks   = coalesce(p_interval_weeks, interval_weeks),
+    due_hour         = coalesce(p_due_hour, due_hour),
+    queue_depth      = coalesce(p_queue_depth, queue_depth),
+    lookahead_days   = coalesce(p_lookahead_days, lookahead_days),
+    sort_order       = coalesce(p_sort_order, sort_order),
+    allow_get_ahead  = coalesce(p_allow_get_ahead, allow_get_ahead),
+    allow_defer      = coalesce(p_allow_defer, allow_defer)
+  where id = p_chore
+  returning * into after;
+
+  schedule_relevant := after.cadence = 'scheduled' or before.cadence = 'scheduled';
+  queue_relevant :=
+    not schedule_relevant and (
+      after.cadence     is distinct from before.cadence or
+      after.queue_depth is distinct from before.queue_depth
+    );
+
+  if schedule_relevant then
+    if after.cadence        is distinct from before.cadence or
+       after.days_of_week   is distinct from before.days_of_week or
+       after.interval_weeks is distinct from before.interval_weeks or
+       after.due_hour       is distinct from before.due_hour
+    then
+      delete from chore_turns where chore_id = p_chore and status = 'pending';
+      if after.cadence = 'scheduled' then
+        perform materialize_schedule(p_chore);
+      else
+        perform top_up_queue(p_chore);
+      end if;
+    end if;
+  elsif queue_relevant then
+    if after.cadence = 'standing' then
+      -- Keep only the earliest (current) pending turn — same one whoever
+      -- holds it was already assigned, flagged, or due on.
+      delete from chore_turns t
+       where t.chore_id = p_chore and t.status = 'pending'
+         and t.turn_number <> (
+           select min(turn_number) from chore_turns
+            where chore_id = p_chore and status = 'pending'
+         );
+    elsif after.queue_depth < before.queue_depth then
+      -- Shrinking an on-demand queue: drop the furthest-out turns, keep the
+      -- ones closest to being up (including whichever is already flagged).
+      delete from chore_turns t
+       where t.chore_id = p_chore and t.status = 'pending'
+         and t.turn_number not in (
+           select turn_number from chore_turns
+            where chore_id = p_chore and status = 'pending'
+            order by turn_number asc
+            limit after.queue_depth
+         );
+    end if;
+    perform top_up_queue(p_chore);
+  end if;
+
+  return after;
+end;
+$$;
+
+-- ------------------------------------------------------------- data repair
+-- Any chore already switched to `standing` under the old logic may be
+-- sitting with more pending turns than the model allows (top_up_queue only
+-- ever topped up the count; it never trims). Collapse each back to its
+-- single earliest turn, same rule as above.
+delete from chore_turns t
+ where t.status = 'pending'
+   and t.chore_id in (select id from chores where cadence = 'standing')
+   and t.turn_number <> (
+     select min(turn_number) from chore_turns t2
+      where t2.chore_id = t.chore_id and t2.status = 'pending'
+   );
+
+
+/**************************************************************************
+ * 0037_settle_nudges.sql
+ *************************************************************************/
+
+-- The "Nudge" action (requestSettleUp) only ever sent a push notification —
+-- useless if the recipient doesn't have push enabled on this device, and
+-- easy to miss even when they do. Give it a real in-app row, same shape as
+-- chore_swaps: a pending-thing-that-needs-your-attention table the
+-- recipient's own client queries directly, surfaced in "Needs an answer"
+-- alongside swap requests.
+
+create table if not exists settle_nudges (
+  id            uuid primary key default gen_random_uuid(),
+  household_id  uuid not null references households(id) on delete cascade,
+  from_profile  uuid not null references profiles(id) on delete cascade, -- who owes (the recipient)
+  to_profile    uuid not null references profiles(id) on delete cascade, -- who is owed (sent it)
+  amount_cents  bigint not null check (amount_cents > 0),
+  created_at    timestamptz not null default now(),
+  dismissed_at  timestamptz,
+  check (from_profile <> to_profile)
+);
+
+create index if not exists settle_nudges_from_profile_pending_idx
+  on settle_nudges (from_profile) where dismissed_at is null;
+
+alter table settle_nudges enable row level security;
+
+-- Read: anyone in the household (matches every other household table) — the
+-- app itself only ever queries a viewer's own pending nudges.
+drop policy if exists settle_nudges_read on settle_nudges;
+create policy settle_nudges_read on settle_nudges for select
+  using (is_household_member(household_id));
+
+-- Insert: only as the creditor, for someone in the same household — mirrors
+-- requestSettleUp's own checks, enforced again here since RLS is the real
+-- boundary.
+drop policy if exists settle_nudges_insert on settle_nudges;
+create policy settle_nudges_insert on settle_nudges for insert
+  with check (
+    is_household_member(household_id)
+    and to_profile = auth.uid()
+    and exists (select 1 from profiles p where p.id = from_profile and p.household_id = household_id)
+  );
+
+-- Dismiss: either side of the nudge — the recipient clearing "seen it,
+-- dealing with it," or recordPayment auto-clearing it once the debt is
+-- actually settled (which can be recorded by either party).
+drop policy if exists settle_nudges_dismiss on settle_nudges;
+create policy settle_nudges_dismiss on settle_nudges for update
+  using (from_profile = auth.uid() or to_profile = auth.uid())
+  with check (from_profile = auth.uid() or to_profile = auth.uid());
+
+
+/**************************************************************************
+ * 0038_kiosk_broadcast.sql
+ *************************************************************************/
+
+-- The kiosk polled router.refresh() every 5s, 24/7 — that alone was ~8.8k
+-- server renders/day for one display and dominated Vercel's Fluid Active CPU
+-- usage. Replace it with a push: broadcast a "something changed" signal to
+-- the kiosk's own browser the moment a relevant row is written, and fall back
+-- to a much slower poll client-side for time-based transitions (e.g. a turn
+-- crossing from "today" into "overdue" at midnight) and as a self-heal if a
+-- broadcast is ever missed.
+--
+-- This can't be a normal RLS-scoped Realtime subscription — the kiosk has no
+-- Supabase auth session at all (see loadKiosk in src/lib/kiosk.ts, which
+-- reads with the service role and filters by household_id by hand). So this
+-- uses Realtime's public "broadcast from database" (realtime.send), with the
+-- channel topic set to the device's own token_hash. That hash is already the
+-- one secret gating this device everywhere else (resolve_device_token), so
+-- reusing it as the channel name needs no new secret and the broadcast
+-- payload itself carries no row data — worst case a topic leak reveals only
+-- "something changed for this device at time T", nothing about what.
+
+create or replace function notify_kiosk_devices(p_household_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare d record;
+begin
+  for d in
+    select token_hash from kiosk_devices
+    where household_id = p_household_id and kind = 'kiosk'
+  loop
+    perform realtime.send(
+      jsonb_build_object('at', now()),
+      'kiosk-refresh',
+      d.token_hash,
+      false
+    );
+  end loop;
+end;
+$$;
+
+-- activity_log is the household's unified event log — every turn completed,
+-- skipped, flagged, undone; every expense, settlement, swap, geofence and
+-- standing-chore action — already writes a row here as part of the same
+-- atomic transaction, which makes it the one hook that covers nearly
+-- everything the kiosk displays.
+create or replace function notify_kiosk_on_activity()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform notify_kiosk_devices(new.household_id);
+  return null;
+end;
+$$;
+
+drop trigger if exists kiosk_notify_activity_log on activity_log;
+create trigger kiosk_notify_activity_log
+  after insert on activity_log
+  for each row execute function notify_kiosk_on_activity();
+
+-- Kiosk notes (posted by an admin, dismissed from the wall) never write to
+-- activity_log — they're the record themselves.
+create or replace function notify_kiosk_on_message_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform notify_kiosk_devices(coalesce(new.household_id, old.household_id));
+  return null;
+end;
+$$;
+
+drop trigger if exists kiosk_notify_kiosk_messages on kiosk_messages;
+create trigger kiosk_notify_kiosk_messages
+  after insert or delete on kiosk_messages
+  for each row execute function notify_kiosk_on_message_change();
+
+-- kiosk_set_chore_active is the one other kiosk-visible write that skips
+-- activity_log (a chore going active/inactive, plus whatever turn its
+-- materialize_schedule/top_up_queue call produces) — same body as
+-- 0012_kiosk_interactivity.sql with a notify appended.
+create or replace function kiosk_set_chore_active(
+  p_household uuid,
+  p_chore     uuid,
+  p_profile   uuid,
+  p_active    boolean
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare chore chores%rowtype;
+begin
+  if not exists (
+    select 1 from profiles
+    where id = p_profile and household_id = p_household and is_admin
+  ) then
+    raise exception 'only an admin can do that';
+  end if;
+
+  update chores set is_active = p_active
+   where id = p_chore and household_id = p_household
+  returning * into chore;
+  if not found then raise exception 'that chore is not in this household'; end if;
+
+  if p_active then
+    if chore.cadence = 'scheduled' then
+      perform materialize_schedule(p_chore);
+    else
+      perform top_up_queue(p_chore);
+    end if;
+  end if;
+
+  perform notify_kiosk_devices(p_household);
 end;
 $$;

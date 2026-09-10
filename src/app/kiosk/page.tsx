@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { kioskHousehold, loadKiosk, UNDOABLE_STATUS } from '@/lib/kiosk';
+import { kioskHousehold, kioskChannelTopic, loadKiosk, UNDOABLE_STATUS } from '@/lib/kiosk';
 import { getWeather, geocodeHouseAddress } from '@/lib/weather';
 import { Logo } from '@/components/brand';
 import { Card, Initials, Pill, cx } from '@/components/ui';
@@ -9,7 +9,7 @@ import { formatCents } from '@/lib/money';
 import { bucketFor, describeCadence } from '@/lib/rotation';
 import { formatInTimeZone } from '@/lib/timezone';
 import {
-  KioskClock, AutoRefresh, ActingAsProvider, ActingAsBar,
+  KioskClock, KioskRealtimeRefresh, ActingAsProvider, ActingAsBar,
   KioskTurnCard, KioskFlagButton, KioskSwapRow, KioskChoreToggle, KioskMessageDismiss,
   KioskActivityRow, KioskWeather,
 } from './kiosk-client';
@@ -40,6 +40,8 @@ export default async function KioskPage({
       </main>
     );
   }
+
+  const channelTopic = await kioskChannelTopic();
 
   const data = await loadKiosk(householdId);
   if (!data) {
@@ -85,7 +87,7 @@ export default async function KioskPage({
   return (
     <ActingAsProvider>
       <main className="kiosk min-h-dvh bg-page p-8 select-none">
-        <AutoRefresh seconds={5} />
+        {channelTopic && <KioskRealtimeRefresh topic={channelTopic} fallbackSeconds={90} />}
 
         <header className="flex items-end justify-between mb-4">
           <div className="flex items-center gap-4">

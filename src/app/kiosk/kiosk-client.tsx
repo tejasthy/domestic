@@ -6,6 +6,7 @@ import {
   kioskCompleteTurn, kioskFlagChore, kioskRespondSwap, kioskSetChoreActive, kioskDismissMessage,
   kioskUndoTurn,
 } from '@/lib/kiosk-actions';
+import { createClient } from '@/lib/supabase/client';
 import { Card, Initials, cx } from '@/components/ui';
 import { Icon } from '@/components/brand';
 import type { Weather } from '@/lib/weather';
@@ -54,14 +55,32 @@ export function KioskClock({ timezone }: { timezone: string }) {
   );
 }
 
-/** Keeps the wall display current without anyone touching it. */
-export function AutoRefresh({ seconds }: { seconds: number }) {
+/**
+ * Keeps the wall display current without anyone touching it. Pushed, not
+ * polled: the DB broadcasts to `topic` (the device's own token hash — see
+ * kioskChannelTopic) the instant a relevant row changes, so a completed turn
+ * or new message shows up as fast as the websocket round-trip. `fallbackSeconds`
+ * is a much slower safety-net poll on top of that, for the things a row
+ * change can't capture — a turn's bucket flipping from "today" to "overdue"
+ * as the clock crosses midnight — and to self-heal if a broadcast is ever
+ * dropped (e.g. a reconnect after the tablet loses wifi).
+ */
+export function KioskRealtimeRefresh({ topic, fallbackSeconds }: { topic: string; fallbackSeconds: number }) {
   const router = useRouter();
 
   useEffect(() => {
-    const id = setInterval(() => router.refresh(), seconds * 1000);
-    return () => clearInterval(id);
-  }, [router, seconds]);
+    const supabase = createClient();
+    const channel = supabase
+      .channel(topic, { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'kiosk-refresh' }, () => router.refresh())
+      .subscribe();
+
+    const id = setInterval(() => router.refresh(), fallbackSeconds * 1000);
+    return () => {
+      clearInterval(id);
+      supabase.removeChannel(channel);
+    };
+  }, [router, topic, fallbackSeconds]);
 
   return null;
 }
