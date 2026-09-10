@@ -1,4 +1,5 @@
 import 'server-only';
+import { createHash } from 'crypto';
 import { cookies } from 'next/headers';
 import { createAdminClient } from '@/lib/supabase/server';
 import type { ActivityEntry, Balance, Chore, KioskMessage, Profile, TurnCard } from '@/lib/types';
@@ -18,6 +19,20 @@ export async function kioskHousehold(): Promise<string | null> {
   const token = jar.get(KIOSK_COOKIE)?.value;
   if (!token) return null;
   return resolveKioskToken(token);
+}
+
+/**
+ * The Realtime broadcast topic this device's browser should subscribe to —
+ * identical to the token_hash `create_device` stored for it, so the DB side
+ * can broadcast to it without either side ever putting the raw token on the
+ * wire again. One-way hash, so exposing this to the client leaks nothing the
+ * rendered page doesn't already.
+ */
+export async function kioskChannelTopic(): Promise<string | null> {
+  const jar = await cookies();
+  const token = jar.get(KIOSK_COOKIE)?.value;
+  if (!token) return null;
+  return createHash('sha256').update(token).digest('hex');
 }
 
 /**

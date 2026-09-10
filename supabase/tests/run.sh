@@ -38,6 +38,7 @@ SQL
 echo "  ok  pgcrypto in extensions + app role created (as in Supabase)"
 
 "${PSQL[@]}" < "$HERE/auth_shim.sql"                   && echo "  ok  auth shim"
+"${PSQL[@]}" < "$HERE/realtime_shim.sql"               && echo "  ok  realtime shim"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0001_init.sql"  && echo "  ok  0001_init.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0002_logic.sql" && echo "  ok  0002_logic.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0003_invites_and_oauth.sql" && echo "  ok  0003_invites_and_oauth.sql"
@@ -75,6 +76,7 @@ echo "  ok  pgcrypto in extensions + app role created (as in Supabase)"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0035_away_abuse_notice.sql" && echo "  ok  0035_away_abuse_notice.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0036_preserve_queue_on_cadence_switch.sql" && echo "  ok  0036_preserve_queue_on_cadence_switch.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0037_settle_nudges.sql" && echo "  ok  0037_settle_nudges.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0038_kiosk_broadcast.sql" && echo "  ok  0038_kiosk_broadcast.sql"
 
 # Only the auth-schema grants are left to do; everything in `public` came from
 # the default privileges set above, so 0004's column-level revoke still stands.
