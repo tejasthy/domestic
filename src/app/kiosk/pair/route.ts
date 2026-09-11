@@ -19,7 +19,18 @@ export async function GET(request: NextRequest) {
   }
 
   // Resolving proves the token belongs to a real device before we store it.
-  const householdId = await resolveKioskToken(token);
+  // A thrown error here is a transient lookup failure (network blip, DB
+  // hiccup), not a bad token — labeling it the same way would send the admin
+  // off to generate a needless new pairing link. `bad_token` is reserved for
+  // resolveKioskToken cleanly returning null.
+  let householdId: string | null;
+  try {
+    householdId = await resolveKioskToken(token);
+  } catch (err) {
+    console.error('[kiosk] pairing lookup failed', err);
+    target.searchParams.set('error', 'lookup_failed');
+    return NextResponse.redirect(target);
+  }
   if (!householdId) {
     target.searchParams.set('error', 'bad_token');
     return NextResponse.redirect(target);
