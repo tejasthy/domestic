@@ -38,6 +38,17 @@ export async function kioskChannelTopic(): Promise<string | null> {
 /**
  * Looks a raw token up by hash; never compares secrets in application code.
  * `kind` matters — a kiosk token must not unlock the Home Assistant surface.
+ *
+ * Throws on a genuine RPC failure (network blip, DB hiccup, cold start)
+ * instead of swallowing it to `null`. `resolve_device_token` itself returns
+ * a clean `null` (no `error`) for a token that just doesn't match anything —
+ * that's the real "not paired" case. Collapsing an actual error into the
+ * same `null` used to make KioskPage render the dead-end "Kiosk not paired"
+ * screen — which has no retry timer — for what was really a transient
+ * failure, leaving the wall display stuck until someone walked over and
+ * reloaded it. Throwing instead lets the Server Component crash so
+ * `error.tsx`'s self-healing retry loop (see its own comment) recovers once
+ * the transient condition clears.
  */
 export async function resolveDeviceToken(
   token: string,
@@ -50,7 +61,7 @@ export async function resolveDeviceToken(
   });
   if (error) {
     console.error('[devices] token lookup failed', error.message);
-    return null;
+    throw new Error(`device token lookup failed: ${error.message}`);
   }
   return (data as string | null) ?? null;
 }

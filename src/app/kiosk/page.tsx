@@ -34,7 +34,9 @@ export default async function KioskPage({
           <p className="t-body-md text-ink-muted mt-2 max-w-sm">
             {error === 'bad_token'
               ? "That pairing link isn't valid — it may have been revoked. Generate a new one."
-              : 'An admin can pair this display under Settings → Household → Wall display.'}
+              : error === 'lookup_failed'
+                ? "Couldn't reach the server to pair this display — try the link again in a moment."
+                : 'An admin can pair this display under Settings → Household → Wall display.'}
           </p>
         </div>
       </main>

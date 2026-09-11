@@ -74,14 +74,29 @@ export async function geocodeLocation(query: string): Promise<GeocodeResult | nu
   return geocodeQuery(query, 0);
 }
 
+/** Open-Meteo's geocoder is a place-name (city/town) search — it has no idea
+ * what to do with a house number and street name and just returns zero
+ * results for one, silently (verified directly against the API: any
+ * "123 Main St, Springfield, IL"-shaped query comes back empty no matter how
+ * it's punctuated). Google's Places Autocomplete, which is what actually
+ * produces `address`, always formats a US result as
+ * "street, city, state[, country]" — so drop the leading street segment
+ * before searching, which is the part Open-Meteo can't use anyway. An
+ * address with 2 or fewer comma-separated parts is assumed to already be
+ * city-level (e.g. someone typed "Ann Arbor, MI" by hand) and is left alone. */
+function toPlaceQuery(address: string): string {
+  const parts = address.split(',').map((p) => p.trim()).filter(Boolean);
+  return parts.length > 2 ? parts.slice(1).join(', ') : address;
+}
+
 /** Geocodes the house's own street address as the kiosk weather widget's
  * default location, so an admin only has to set one under Settings → Household
  * → Wall display if they want weather for somewhere other than the house
  * itself. A physical address doesn't move, so this is cached for a day rather
- * than the 10 minutes getWeather() itself uses — the kiosk polls every 5
- * seconds and would otherwise hammer the geocoder for no reason. */
+ * than the 10 minutes getWeather() itself uses — the kiosk's realtime refresh
+ * would otherwise hammer the geocoder on every push. */
 export async function geocodeHouseAddress(address: string): Promise<GeocodeResult | null> {
-  return geocodeQuery(address, 86400);
+  return geocodeQuery(toPlaceQuery(address), 86400);
 }
 
 export type HourlyForecast = { hourLabel: string; tempF: number; emoji: string; precipChance: number };
