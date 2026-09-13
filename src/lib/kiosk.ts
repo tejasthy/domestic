@@ -118,7 +118,7 @@ const TURN_SELECT = `
 export async function loadKiosk(householdId: string): Promise<KioskData | null> {
   const admin = createAdminClient();
 
-  const { data: household } = await admin
+  const { data: household, error: householdError } = await admin
     .from('households')
     .select('id, name, timezone, address, latitude, longitude')
     .eq('id', householdId)
@@ -127,6 +127,10 @@ export async function loadKiosk(householdId: string): Promise<KioskData | null> 
       address: string | null; latitude: number | null; longitude: number | null;
     }>();
 
+  if (householdError && householdError.code !== 'PGRST116') {
+    console.error('[kiosk] household lookup failed', householdError.message);
+    throw new Error(`kiosk household lookup failed: ${householdError.message}`);
+  }
   if (!household) return null;
 
   const { data: modules } = await admin.rpc('enabled_modules', { p_household: household.id });
