@@ -5,9 +5,18 @@ Chore and expense tracker for a four-person house. See README.md for setup.
 ## Model
 
 Chores own a **fixed rotation** and a **monotonic turn counter**. Turn `N`
-belongs to `rotation[N % rotation.length]`. This is derived, never stored as a
-mutable pointer — so skipping, swapping, or back-dating a turn cannot desync the
-order. Mirror this if you add chore features.
+belongs to the next *available* person after whoever held turn `N-1` — with
+nobody away that is exactly `rotation[N % rotation.length]`. This is derived
+from `chore_turns` history in `rotation_assignee()`, never stored as a mutable
+pointer — so skipping, swapping, or back-dating a turn cannot desync the order.
+Mirror this if you add chore features.
+
+**Away** (0039): while someone is away the rotation rotates over those present
+(no double-ups). A returner who was skipped on a trip shorter than one full
+rotation of the people who stayed takes the next turn as make-up; a longer trip
+earns none. A lapsed away date is not an event, so `sync_lapsed_away()` (called
+from `/api/cron`) re-derives pending turns. `resync_pending_turns` must run in
+ascending `turn_number` order because each turn derives from the one before.
 
 - `scheduled` chores have a `due_at` and are materialized ahead by
   `materialize_schedule()` out to `lookahead_days`.

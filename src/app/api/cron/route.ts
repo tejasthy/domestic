@@ -13,7 +13,9 @@ function authorized(request: NextRequest) {
 }
 
 /**
- * Runs a few times a day (see vercel.json). Three jobs:
+ * Runs a few times a day (see vercel.json). Four jobs:
+ *   0. hand turns back when someone's away date has lapsed on its own
+ *      (nothing else fires when a date merely passes)
  *   1. keep scheduled turns materialized out to each chore's lookahead
  *   2. keep on-demand queues topped up
  *   3. nudge whoever has something due today, once, respecting quiet hours
@@ -24,7 +26,12 @@ export async function GET(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const report = { materialized: 0, queued: 0, notified: 0, missed: 0, recurringPosted: 0 };
+  const report = { awayLapsed: 0, materialized: 0, queued: 0, notified: 0, missed: 0, recurringPosted: 0 };
+
+  // Before materializing, so freshly-back members get their turns re-derived
+  // first and the top-ups below see the corrected rotation.
+  const { data: lapsed } = await admin.rpc('sync_lapsed_away');
+  report.awayLapsed = Number(lapsed ?? 0);
 
   const { data: chores } = await admin
     .from('chores')

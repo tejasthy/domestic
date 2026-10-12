@@ -381,6 +381,7 @@ export type Database = {
       set_away: { Args: { p_until?: string | null }; Returns: MemberAwayRow };
       clear_away: { Args: Record<PropertyKey, never>; Returns: void };
       admin_clear_away: { Args: { p_profile: string }; Returns: void };
+      sync_lapsed_away: { Args: Record<PropertyKey, never>; Returns: number };
       get_away_abuse_flags: {
         Args: Record<PropertyKey, never>;
         Returns: {
