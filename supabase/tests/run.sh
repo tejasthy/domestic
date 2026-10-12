@@ -77,6 +77,7 @@ echo "  ok  pgcrypto in extensions + app role created (as in Supabase)"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0036_preserve_queue_on_cadence_switch.sql" && echo "  ok  0036_preserve_queue_on_cadence_switch.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0037_settle_nudges.sql" && echo "  ok  0037_settle_nudges.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0038_kiosk_broadcast.sql" && echo "  ok  0038_kiosk_broadcast.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0039_away_rotation_fairness.sql" && echo "  ok  0039_away_rotation_fairness.sql"
 
 # Only the auth-schema grants are left to do; everything in `public` came from
 # the default privileges set above, so 0004's column-level revoke still stands.
@@ -129,6 +130,7 @@ echo "── standing chores, flags, get-ahead/defer, geofence, platform admin �
 "${PSQL[@]}" < "$HERE/platform_admin.sql"
 "${PSQL[@]}" < "$HERE/credit_assignee.sql"
 "${PSQL[@]}" < "$HERE/away_abuse_notice.sql"
+"${PSQL[@]}" < "$HERE/away_rotation.sql"
 
 echo
 echo "All database checks passed."
