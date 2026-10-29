@@ -290,7 +290,10 @@ immediately, however long its token has left.
 **Connecting.** In Claude: Settings → Connectors → Add custom connector →
 `https://<your-app>.vercel.app/api/mcp`. Other assistants take the same URL
 wherever they accept a remote MCP server. Each person signs in to Domestic and
-approves on `/oauth/consent`; their roommates are not affected.
+approves on `/oauth/consent`; their roommates are not affected. Once the module
+is on, every member sees the address, copy buttons and per-assistant steps under
+**Settings → You → AI assistants** (`settings/connect-assistant.tsx`), built from
+`NEXT_PUBLIC_SITE_URL` — so set that to the real deployed origin.
 
 **Tools:** `get_household`, `list_chores`, `get_balances`, `recent_activity`
 (read-only), and `complete_chore` / `flag_chore`, which call the same database

@@ -1,11 +1,13 @@
 import Link from 'next/link';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { getSession, getChoreStats, getChores, hasPushSubscription } from '@/lib/data';
 import { Card, SectionHeader, Initials, Button } from '@/components/ui';
 import { signOut } from '@/lib/actions';
 import { PushToggle } from './push-toggle';
 import { AwayToggle } from './away-toggle';
 import { FeedbackForm } from './feedback-form';
+import { ConnectAssistant } from './connect-assistant';
+import { mcpEndpoint } from '@/lib/mcp/connect';
 import { ReplayIntro } from '@/components/intro';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { THEME_COOKIE, parseThemeCookie } from '@/lib/theme';
@@ -26,6 +28,17 @@ export default async function SettingsPage() {
   const myTotal = stats
     .filter((s) => s.profile_id === me.id)
     .reduce((acc, s) => acc + s.done_count, 0);
+
+  // The configured origin when there is one (it is also the OAuth Site URL),
+  // otherwise whatever host this request arrived on.
+  let connectorUrl: string | null = null;
+  if (modules.includes('mcp')) {
+    const h = await headers();
+    const origin =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      `${h.get('x-forwarded-proto') ?? 'https'}://${h.get('host')}`;
+    connectorUrl = mcpEndpoint(origin);
+  }
 
   return (
     <div className="space-y-7 max-w-lg">
@@ -117,6 +130,13 @@ export default async function SettingsPage() {
           </div>
         </Card>
       </section>
+
+      {connectorUrl && (
+        <section>
+          <SectionHeader title="AI assistants" />
+          <ConnectAssistant url={connectorUrl} />
+        </section>
+      )}
 
       <section>
         <SectionHeader title="Help" />
