@@ -10,7 +10,7 @@
  * household that toggled it. Add a new key and migrate instead.
  */
 
-export type ModuleKey = 'chores' | 'expenses' | 'kiosk';
+export type ModuleKey = 'chores' | 'expenses' | 'kiosk' | 'mcp';
 
 export type ModuleDef = {
   key: ModuleKey;
@@ -55,6 +55,19 @@ export const MODULES: ModuleDef[] = [
     emoji: '📺',
     defaultEnabled: true,
     routes: ['/kiosk'],
+    reversible: true,
+  },
+  {
+    key: 'mcp',
+    name: 'AI assistants',
+    tagline: 'Let Claude, Gemini or Muse check the rotation and balances, and mark chores done.',
+    emoji: '🤖',
+    // Opt-in: it hands a third party's assistant a signed-in member's access,
+    // so no house gets it by default. Must stay out of default_modules() in SQL.
+    defaultEnabled: false,
+    // No page 404s when this is off: /oauth/consent explains itself instead of
+    // dead-ending a person mid-sign-in, and /api/mcp refuses every tool call.
+    routes: [],
     reversible: true,
   },
 ];

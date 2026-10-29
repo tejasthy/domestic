@@ -266,6 +266,45 @@ at the total before saving. Roughly a cent per scan.
 
 ---
 
+## AI assistants (MCP)
+
+Claude, Gemini, Muse, or any client that speaks remote MCP can read the
+rotation and balances and mark chores done, signed in as the person who
+connected it. `/api/mcp` is one stateless endpoint — every call is a short
+serverless invocation with no held-open stream, so it costs next to nothing on
+Vercel.
+
+**One-time setup in Supabase** (Authentication → OAuth Server — still in beta):
+
+1. Enable the OAuth 2.1 server.
+2. Set the **Authorization Path** to `/oauth/consent`. Supabase joins it to your
+   Site URL, which must be the real deployed origin.
+3. Turn on **dynamic client registration** so assistants can register
+   themselves (`allow_dynamic_registration = true` under `[auth.oauth_server]`
+   in `supabase/config.toml` locally). Or pre-register a client per assistant.
+
+Then an admin switches on **AI assistants** under **Settings → Household**. It is
+off by default, and switching it off locks every connected assistant out
+immediately, however long its token has left.
+
+**Connecting.** In Claude: Settings → Connectors → Add custom connector →
+`https://<your-app>.vercel.app/api/mcp`. Other assistants take the same URL
+wherever they accept a remote MCP server. Each person signs in to Domestic and
+approves on `/oauth/consent`; their roommates are not affected.
+
+**Tools:** `get_household`, `list_chores`, `get_balances`, `recent_activity`
+(read-only), and `complete_chore` / `flag_chore`, which call the same database
+functions the app does — so the same rules apply (only your own turn, location
+rules, and so on).
+
+**Security model.** Supabase issues an ordinary user token; the endpoint verifies
+it and queries through a client carrying that token, never the service role, so
+RLS is still the boundary. Be aware that Supabase OAuth has no narrower scopes:
+an approved assistant holds a sign-in for the person's account, not only these
+tools. That is why the consent screen says so, and why the module is opt-in.
+
+---
+
 ## Home Assistant → HomeKit
 
 **HomeKit has no cloud API.** Nothing on the internet can create a HomeKit
@@ -346,6 +385,8 @@ src/app/
   api/receipt          Claude vision receipt OCR
   api/cron             materialize schedule + daily digest
   api/ha               Home Assistant bridge
+  api/mcp              MCP endpoint for AI assistants (OAuth via Supabase)
+  oauth/consent        where an assistant's sign-in request is approved
 scripts/seed.mjs       household, roommates, and the five chores off the chart
 ```
 

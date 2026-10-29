@@ -64,6 +64,17 @@ Rotation membership changes go through `add_to_rotations` /
 `resync_pending_turns`. Pending turns are re-derived; completed turns are
 history and must never be rewritten.
 
+## MCP
+
+`/api/mcp` authenticates a Supabase OAuth access token (`lib/mcp/auth.ts`) and
+queries through a client carrying that token — **never** `createAdminClient()`.
+RLS stays the boundary and `auth.uid()` is the real person, so reuse the app's
+RPCs (`complete_turn`, `flag_on_demand`) rather than reimplementing them as the
+HA bridge has to. Every tool call re-checks the `mcp` module and fails closed.
+It is stateless JSON over POST on purpose: no sessions, no SSE, so nothing bills
+while idle. Supabase has no narrower OAuth scopes, so a token is a full sign-in;
+expose capability through tools only, and keep write tools few.
+
 ## Modules
 
 `src/lib/modules.ts` is the registry; `household_modules` stores only which keys
