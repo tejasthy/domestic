@@ -3,6 +3,8 @@ import { createServerClient } from '@supabase/ssr';
 
 const PUBLIC_PATHS = [
   '/login', '/auth', '/kiosk', '/api/ha', '/api/cron',
+  // MCP clients carry an OAuth bearer, not our cookie; the route checks it.
+  '/api/mcp', '/.well-known',
   '/privacy', '/terms',
   '/manifest.webmanifest', '/kiosk-manifest.webmanifest', '/sw.js',
 ];
