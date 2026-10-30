@@ -7,7 +7,7 @@
 -- statement is idempotent, so running this again is a no-op — you do not need
 -- to track which migrations you have already applied.
 --
--- Contains: 0001_init.sql, 0002_logic.sql, 0003_invites_and_oauth.sql, 0004_multi_household.sql, 0005_modules.sql, 0006_devices.sql, 0007_intro.sql, 0008_pgcrypto_schema.sql, 0009_chore_admin.sql, 0010_recurring_expenses.sql, 0011_ai_config.sql, 0012_kiosk_interactivity.sql, 0013_split_adjustment.sql, 0014_expense_items.sql, 0015_lock_kiosk_rpcs_from_anon.sql, 0016_kiosk_dismiss_message.sql, 0017_update_expense.sql, 0018_skip_and_undo_turn.sql, 0019_kiosk_undo_turn.sql, 0020_away_and_pass_turn.sql, 0021_standing_chores.sql, 0022_turn_flags.sql, 0023_get_ahead_and_defer.sql, 0024_geofence.sql, 0025_platform_admin_identity.sql, 0026_feedback.sql, 0027_platform_stats.sql, 0028_standing_chore_flag.sql, 0029_swap_get_ahead_defer.sql, 0030_platform_admin_table.sql, 0031_geofence_house_address.sql, 0032_credit_assignee_in_activity_log.sql, 0033_per_chore_advance_and_admin_pass_skip.sql, 0034_defer_chain_cap.sql, 0035_away_abuse_notice.sql, 0036_preserve_queue_on_cadence_switch.sql, 0037_settle_nudges.sql, 0038_kiosk_broadcast.sql, 0039_away_rotation_fairness.sql
+-- Contains: 0001_init.sql, 0002_logic.sql, 0003_invites_and_oauth.sql, 0004_multi_household.sql, 0005_modules.sql, 0006_devices.sql, 0007_intro.sql, 0008_pgcrypto_schema.sql, 0009_chore_admin.sql, 0010_recurring_expenses.sql, 0011_ai_config.sql, 0012_kiosk_interactivity.sql, 0013_split_adjustment.sql, 0014_expense_items.sql, 0015_lock_kiosk_rpcs_from_anon.sql, 0016_kiosk_dismiss_message.sql, 0017_update_expense.sql, 0018_skip_and_undo_turn.sql, 0019_kiosk_undo_turn.sql, 0020_away_and_pass_turn.sql, 0021_standing_chores.sql, 0022_turn_flags.sql, 0023_get_ahead_and_defer.sql, 0024_geofence.sql, 0025_platform_admin_identity.sql, 0026_feedback.sql, 0027_platform_stats.sql, 0028_standing_chore_flag.sql, 0029_swap_get_ahead_defer.sql, 0030_platform_admin_table.sql, 0031_geofence_house_address.sql, 0032_credit_assignee_in_activity_log.sql, 0033_per_chore_advance_and_admin_pass_skip.sql, 0034_defer_chain_cap.sql, 0035_away_abuse_notice.sql, 0036_preserve_queue_on_cadence_switch.sql, 0037_settle_nudges.sql, 0038_kiosk_broadcast.sql, 0039_away_rotation_fairness.sql, 0040_mcp_rate_limits.sql, 0041_create_expense.sql
 
 /**************************************************************************
  * 0001_init.sql
@@ -7725,4 +7725,245 @@ begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then
     grant execute on function sync_lapsed_away() to service_role;
   end if;
+end $$;
+
+
+/**************************************************************************
+ * 0040_mcp_rate_limits.sql
+ *************************************************************************/
+
+-- Per-person rate limiting for the MCP endpoint (/api/mcp).
+--
+-- Vercel functions share no memory, so a counter in the function process would
+-- reset on every cold start and differ per instance. The count lives here
+-- instead: one row per person, bucket and time window, bumped atomically with
+-- a single upsert. Fixed windows are coarse but cheap, and the endpoint only
+-- needs to stop a runaway assistant loop from burning the house's Vercel and
+-- database budget, not to meter fairly.
+--
+-- Like household_ai_config this table has RLS on and *no policy*: nobody reads
+-- or writes it through the API, only the SECURITY DEFINER function below does.
+
+create table if not exists mcp_rate_limits (
+  profile_id    uuid        not null references profiles(id) on delete cascade,
+  bucket        text        not null,
+  window_start  timestamptz not null,
+  hits          integer     not null default 0,
+  primary key (profile_id, bucket, window_start)
+);
+
+alter table mcp_rate_limits enable row level security;
+-- Deliberately no policy.
+
+-- Counts one call and says whether it is within the limit. The caller passes
+-- the limit and window so tuning them never needs a migration; the bucket and
+-- window are validated so a person calling this directly cannot create
+-- unbounded rows by inventing bucket names.
+create or replace function mcp_rate_check(
+  p_bucket          text,
+  p_limit           integer,
+  p_window_seconds  integer
+)
+returns table (allowed boolean, retry_after integer)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  me  uuid := auth.uid();
+  ws  timestamptz;
+  n   integer;
+begin
+  if me is null then raise exception 'not signed in'; end if;
+  if p_bucket not in ('read', 'write', 'write_day') then
+    raise exception 'unknown rate limit bucket %', p_bucket;
+  end if;
+  if p_limit < 1 or p_window_seconds not between 1 and 86400 then
+    raise exception 'invalid rate limit';
+  end if;
+
+  ws := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
+
+  insert into mcp_rate_limits (profile_id, bucket, window_start, hits)
+  values (me, p_bucket, ws, 1)
+  on conflict (profile_id, bucket, window_start)
+    do update set hits = mcp_rate_limits.hits + 1
+  returning hits into n;
+
+  allowed := n <= p_limit;
+  retry_after := case
+    when allowed then 0
+    else greatest(1, ceil(extract(epoch from (ws + make_interval(secs => p_window_seconds) - now())))::integer)
+  end;
+  return next;
+end;
+$$;
+
+-- Old windows are dead weight. The daily cron calls this with the service role.
+create or replace function prune_mcp_rate_limits()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare n integer;
+begin
+  delete from mcp_rate_limits where window_start < now() - interval '2 days';
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+-- Supabase also grants EXECUTE to `anon` by default (see 0015), so revoke it
+-- explicitly. The limiter is for signed-in people; pruning is service_role only.
+do $$
+declare r text;
+begin
+  foreach r in array array['anon', 'authenticated', 'domestic_app'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('revoke execute on function prune_mcp_rate_limits() from %I', r);
+    end if;
+  end loop;
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke execute on function mcp_rate_check(text, integer, integer) from anon;
+  end if;
+end $$;
+
+revoke execute on function mcp_rate_check(text, integer, integer) from public;
+revoke execute on function prune_mcp_rate_limits() from public;
+
+do $$
+declare r text;
+begin
+  foreach r in array array['authenticated', 'domestic_app'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format('grant execute on function mcp_rate_check(text, integer, integer) to %I', r);
+    end if;
+  end loop;
+end $$;
+
+
+/**************************************************************************
+ * 0041_create_expense.sql
+ *************************************************************************/
+
+-- An atomic home for the plain (non-itemized) expense, the way
+-- create_itemized_expense (0014) is for receipts.
+--
+-- The app's addExpense() inserts the expense, then its splits, and deletes the
+-- expense again if the splits fail. That is fine for one client, but a second
+-- caller — the MCP endpoint — should not have to re-implement the rollback, and
+-- a crash between the two inserts would leave an expense with no splits, which
+-- silently skews every balance in the house. Here it is one transaction.
+--
+-- The caller works out the shares (money.ts keeps them remainder-safe); this
+-- only checks them and writes.
+--
+--   p_shares: [{ "profile_id": uuid, "owed_cents": bigint, "weight": numeric|null }, ...]
+
+create or replace function create_expense(
+  p_description   text,
+  p_amount_cents  bigint,
+  p_paid_by       uuid,
+  p_spent_on      date,
+  p_split_kind    text,
+  p_shares        jsonb,
+  p_category      text default 'general',
+  p_note          text default null
+)
+returns expenses
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  hh            uuid;
+  row_out       expenses%rowtype;
+  shares_total  bigint;
+begin
+  select household_id into hh from profiles where id = auth.uid();
+  if hh is null then raise exception 'you are not in a household'; end if;
+
+  if length(trim(coalesce(p_description, ''))) = 0 then raise exception 'give it a name'; end if;
+  if p_amount_cents is null or p_amount_cents <= 0 then
+    raise exception 'the amount must be greater than zero';
+  end if;
+  if p_split_kind not in ('equal', 'exact', 'shares', 'percent', 'adjustment') then
+    raise exception 'unknown split kind %', p_split_kind;
+  end if;
+  if not exists (select 1 from profiles where id = p_paid_by and household_id = hh) then
+    raise exception 'the payer must be in your household';
+  end if;
+
+  if jsonb_typeof(p_shares) is distinct from 'array' or jsonb_array_length(p_shares) = 0 then
+    raise exception 'split it with someone';
+  end if;
+  if exists (
+    select 1
+    from jsonb_to_recordset(p_shares) as s(profile_id uuid, owed_cents bigint, weight numeric)
+    where not exists (select 1 from profiles where id = s.profile_id and household_id = hh)
+  ) then
+    raise exception 'everyone in the split must be in your household';
+  end if;
+  if (
+    select count(*) <> count(distinct s.profile_id)
+    from jsonb_to_recordset(p_shares) as s(profile_id uuid)
+  ) then
+    raise exception 'each person can only appear once in the split';
+  end if;
+  if exists (
+    select 1 from jsonb_to_recordset(p_shares) as s(owed_cents bigint) where s.owed_cents < 0
+  ) then
+    raise exception 'no one can owe a negative share';
+  end if;
+
+  select sum(s.owed_cents) into shares_total
+  from jsonb_to_recordset(p_shares) as s(owed_cents bigint);
+  if shares_total is distinct from p_amount_cents then
+    raise exception 'the shares must add up to the total';
+  end if;
+
+  insert into expenses (
+    household_id, description, amount_cents, category, paid_by, spent_on,
+    split_kind, note, created_by
+  )
+  values (
+    hh, trim(p_description), p_amount_cents,
+    coalesce(nullif(trim(p_category), ''), 'general'),
+    p_paid_by, p_spent_on, p_split_kind::split_kind, p_note, auth.uid()
+  )
+  returning * into row_out;
+
+  insert into expense_splits (expense_id, profile_id, owed_cents, weight)
+  select row_out.id, s.profile_id, s.owed_cents, s.weight
+  from jsonb_to_recordset(p_shares) as s(profile_id uuid, owed_cents bigint, weight numeric);
+
+  insert into activity_log (household_id, actor_id, verb, summary, metadata)
+  select hh, auth.uid(), 'added_expense',
+         p.full_name || ' added ' || row_out.description
+           || ' — $' || to_char(p_amount_cents / 100.0, 'FM999999990.00'),
+         jsonb_build_object('expense_id', row_out.id, 'amount_cents', p_amount_cents)
+  from profiles p where p.id = auth.uid();
+
+  return row_out;
+end;
+$$;
+
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke execute on function create_expense(text, bigint, uuid, date, text, jsonb, text, text) from anon;
+  end if;
+end $$;
+revoke execute on function create_expense(text, bigint, uuid, date, text, jsonb, text, text) from public;
+
+do $$
+declare r text;
+begin
+  foreach r in array array['authenticated', 'domestic_app'] loop
+    if exists (select 1 from pg_roles where rolname = r) then
+      execute format(
+        'grant execute on function create_expense(text, bigint, uuid, date, text, jsonb, text, text) to %I', r);
+    end if;
+  end loop;
 end $$;

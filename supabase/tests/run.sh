@@ -78,6 +78,8 @@ echo "  ok  pgcrypto in extensions + app role created (as in Supabase)"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0037_settle_nudges.sql" && echo "  ok  0037_settle_nudges.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0038_kiosk_broadcast.sql" && echo "  ok  0038_kiosk_broadcast.sql"
 "${PSQL[@]}" < "$REPO/supabase/migrations/0039_away_rotation_fairness.sql" && echo "  ok  0039_away_rotation_fairness.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0040_mcp_rate_limits.sql" && echo "  ok  0040_mcp_rate_limits.sql"
+"${PSQL[@]}" < "$REPO/supabase/migrations/0041_create_expense.sql" && echo "  ok  0041_create_expense.sql"
 
 # Only the auth-schema grants are left to do; everything in `public` came from
 # the default privileges set above, so 0004's column-level revoke still stands.
@@ -131,6 +133,10 @@ echo "── standing chores, flags, get-ahead/defer, geofence, platform admin �
 "${PSQL[@]}" < "$HERE/credit_assignee.sql"
 "${PSQL[@]}" < "$HERE/away_abuse_notice.sql"
 "${PSQL[@]}" < "$HERE/away_rotation.sql"
+
+echo
+echo "── MCP rate limits & create_expense ───────────────────"
+"${PSQL[@]}" < "$HERE/mcp.sql"
 
 echo
 echo "All database checks passed."
