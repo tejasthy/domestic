@@ -616,6 +616,24 @@ export type Database = {
         };
         Returns: Expense;
       };
+      create_expense: {
+        Args: {
+          p_description: string;
+          p_amount_cents: number;
+          p_paid_by: string;
+          p_spent_on: string;
+          p_split_kind: SplitKind;
+          p_shares: { profile_id: string; owed_cents: number; weight: number | null }[];
+          p_category?: string;
+          p_note?: string | null;
+        };
+        Returns: Expense;
+      };
+      mcp_rate_check: {
+        Args: { p_bucket: string; p_limit: number; p_window_seconds: number };
+        Returns: { allowed: boolean; retry_after: number }[];
+      };
+      prune_mcp_rate_limits: { Args: Record<PropertyKey, never>; Returns: number };
       update_expense: {
         Args: {
           p_expense_id: string;

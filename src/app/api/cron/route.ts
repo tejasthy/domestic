@@ -26,12 +26,21 @@ export async function GET(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const report = { awayLapsed: 0, materialized: 0, queued: 0, notified: 0, missed: 0, recurringPosted: 0 };
+  const report = {
+    awayLapsed: 0, materialized: 0, queued: 0, notified: 0, missed: 0, recurringPosted: 0,
+    rateLimitsPruned: 0,
+  };
 
   // Before materializing, so freshly-back members get their turns re-derived
   // first and the top-ups below see the corrected rotation.
   const { data: lapsed } = await admin.rpc('sync_lapsed_away');
   report.awayLapsed = Number(lapsed ?? 0);
+
+  // Old MCP rate-limit windows are dead weight (0040). Best-effort: if the
+  // migration has not been applied yet this returns an error and a null, and
+  // the rest of the cron carries on.
+  const { data: pruned } = await admin.rpc('prune_mcp_rate_limits');
+  report.rateLimitsPruned = Number(pruned ?? 0);
 
   const { data: chores } = await admin
     .from('chores')

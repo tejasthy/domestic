@@ -4,44 +4,13 @@ import {
   bearerToken, protectedResourceMetadata, resourceMetadataUrl, type McpPrincipal,
 } from '../mcp/auth';
 import { handleMcp } from '../mcp/handler';
+import { WRITE_TOOLS } from '../mcp/common';
 import { matchChore } from '../mcp/tools';
+import { fakeSupabase } from './fake-supabase';
 
 const ME = '11111111-1111-4111-8111-111111111111';
 const HOUSE = '22222222-2222-4222-8222-222222222222';
 const TURN = '33333333-3333-4333-8333-333333333333';
-
-/**
- * A chainable stand-in for the Supabase query builder: every filter returns
- * itself, and awaiting it (or calling .single()) yields the table's fixture.
- */
-function fakeSupabase(fixtures: {
-  tables?: Record<string, unknown[]>;
-  rpc?: Record<string, unknown>;
-}) {
-  const calls: { rpc: [string, unknown][] } = { rpc: [] };
-  const builder = (rows: unknown[]) => {
-    const b: Record<string, unknown> = {};
-    for (const m of ['select', 'eq', 'or', 'order', 'limit', 'returns']) b[m] = () => b;
-    b.single = () => Promise.resolve({ data: rows[0] ?? null, error: null });
-    b.then = (resolve: (v: unknown) => unknown) => resolve({ data: rows, error: null });
-    return b;
-  };
-  const client = {
-    from: (table: string) => builder(fixtures.tables?.[table] ?? []),
-    rpc: (name: string, args: unknown) => {
-      calls.rpc.push([name, args]);
-      const out = fixtures.rpc?.[name];
-      const result =
-        out instanceof Error
-          ? { data: null, error: { message: out.message } }
-          : { data: out ?? null, error: null };
-      return Object.assign(Promise.resolve(result), {
-        single: () => Promise.resolve(result),
-      });
-    },
-  };
-  return { client: client as unknown as SupabaseClient, calls };
-}
 
 function principal(supabase: SupabaseClient): McpPrincipal {
   return { userId: ME, clientId: 'claude', supabase: supabase as McpPrincipal['supabase'] };
@@ -143,10 +112,41 @@ describe('transport', () => {
     expect((await init.json()).result.serverInfo.name).toBe('domestic');
 
     const list = await handleMcp(rpcRequest('tools/list', {}, 2), deps);
-    const names = (await list.json()).result.tools.map((t: { name: string }) => t.name);
-    expect(names.sort()).toEqual([
-      'complete_chore', 'flag_chore', 'get_balances', 'get_household', 'list_chores', 'recent_activity',
+    const tools = (await list.json()).result.tools as { name: string; annotations?: { readOnlyHint?: boolean } }[];
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      'add_expense', 'add_itemized_expense', 'chore_history', 'chore_stats', 'clear_away', 'complete_chore',
+      'flag_chore', 'get_balances', 'get_expense', 'get_household', 'list_chores', 'list_expenses',
+      'list_recurring_expenses', 'list_settlements', 'list_swaps', 'post_kiosk_message', 'recent_activity',
+      'record_payment', 'request_settle_up', 'request_swap', 'respond_to_swap', 'set_away',
     ]);
+
+    // Every tool that can change something is metered as a write, and nothing else is, so a
+    // new write tool cannot slip past the tighter budget.
+    const declaredWrites = tools.filter((t) => t.annotations?.readOnlyHint === false).map((t) => t.name).sort();
+    expect(declaredWrites).toEqual([...WRITE_TOOLS].sort());
+  });
+
+  it('offers prompts and a house resource, which need no database', async () => {
+    const { client, calls } = fakeSupabase({});
+    const deps = { authenticate: async () => principal(client), notify: vi.fn() };
+
+    const prompts = await (await handleMcp(rpcRequest('prompts/list', {}, 3), deps)).json();
+    expect(prompts.result.prompts.map((p: { name: string }) => p.name).sort()).toEqual([
+      'add_receipt', 'chore_fairness', 'settle_up', 'weekly_digest',
+    ]);
+
+    const digest = await (await handleMcp(rpcRequest('prompts/get', { name: 'weekly_digest' }, 4), deps)).json();
+    expect(digest.result.messages[0].content.text).toMatch(/get_balances/);
+
+    const fairness = await (
+      await handleMcp(rpcRequest('prompts/get', { name: 'chore_fairness', arguments: { days: '14' } }, 5), deps)
+    ).json();
+    expect(fairness.result.messages[0].content.text).toMatch(/last 14 days/);
+
+    const resources = await (await handleMcp(rpcRequest('resources/list', {}, 6), deps)).json();
+    expect(resources.result.resources[0].uri).toBe('domestic://house');
+    // Listing prompts and resources never touches the database.
+    expect(calls.filters).toEqual([]);
   });
 });
 

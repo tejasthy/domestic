@@ -295,10 +295,53 @@ is on, every member sees the address, copy buttons and per-assistant steps under
 **Settings → You → AI assistants** (`settings/connect-assistant.tsx`), built from
 `NEXT_PUBLIC_SITE_URL` — so set that to the real deployed origin.
 
-**Tools:** `get_household`, `list_chores`, `get_balances`, `recent_activity`
-(read-only), and `complete_chore` / `flag_chore`, which call the same database
-functions the app does — so the same rules apply (only your own turn, location
-rules, and so on).
+**Tools.** Read-only: `get_household` (includes the house's own date, so "last
+month" resolves correctly), `list_chores`, `get_balances`, `recent_activity`,
+`list_expenses` (filter by date, payer, person, category or text; totals every
+match per person and category, including what each person paid for the others),
+`get_expense` (one expense with its line items, tax, tip and per-item shares),
+`list_settlements`, `list_recurring_expenses`, `list_swaps`, `chore_history`, and
+`chore_stats` (done and missed per person — all-time, or within a date window,
+with zeros for anyone who did none). There are also prompts (weekly digest,
+settle up, chore fairness, itemize a receipt) and a `domestic://house` resource.
+
+Acting as the signed-in person: `complete_chore`, `flag_chore`, `request_swap`,
+`respond_to_swap`, `set_away`, `clear_away`, `post_kiosk_message`,
+`request_settle_up`, and the money tools below. They call the same database
+functions the app does, so the same rules apply (only your own turn, location
+rules, and so on). There is no tool to edit or delete anything already recorded.
+
+**Receipts.** `add_itemized_expense` lets the person's own assistant do the
+reading: share a receipt photo with Claude, Muse or Gemini and say "split this
+receipt", and the assistant lists every line (items, tax, tip, fees, discounts)
+and the printed total. Domestic refuses unless the lines add up to that total
+exactly, which catches a misread price or a missed line. Tax, tip and fees are
+shared in proportion to what each person's own items came to, unless assigned.
+Domestic never sees the photo and does not store one.
+
+**Money tools preview first.** `add_expense`, `add_itemized_expense` and
+`record_payment` record nothing until called with `confirm: true`; the first call
+returns exactly what would be saved. That is a convention the assistant is told
+to follow — the real backstop is the assistant's own approval step for tools that
+change data — plus a duplicate check (an identical entry in the last ten minutes
+is refused unless told it is real), whole-cent validation, and the atomic
+`create_expense` / `create_itemized_expense` database functions.
+
+**Rate limiting.** Each person gets 120 reads a minute and 10 writes a minute
+(100 a day); going over returns a tool error the assistant can read out, with a
+`Retry-After`. Connecting and listing tools are never limited. The counts live
+in Postgres (`mcp_rate_limits`) because Vercel functions share no memory. It
+fails open if that table is missing, so deploying the code before the migration
+cannot lock a house out. For floods of unauthenticated requests, which this
+cannot see, add a Vercel Firewall rate-limit rule on `/api/mcp`.
+
+**Disconnecting.** Settings → You lists every assistant a person has approved,
+each with a Disconnect button that revokes its access immediately. Switching AI
+assistants off for the house locks all of them out at once.
+
+**Migrations 0040 and 0041 are applied by hand**, like the rest: paste
+`supabase/apply-all.sql` into the Supabase SQL editor (it is safe to re-run). The
+code works without them, but receipts and rate limiting do not.
 
 **Security model.** Supabase issues an ordinary user token; the endpoint verifies
 it and queries through a client carrying that token, never the service role, so

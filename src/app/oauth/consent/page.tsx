@@ -99,10 +99,24 @@ export default async function ConsentPage({
           <div>
             <p className="t-body-md text-ink font-semibold">It will be able to</p>
             <ul className="t-body-sm text-ink-2 mt-1 list-disc pl-5 space-y-0.5">
-              <li>See who lives here and who is away</li>
-              <li>See who is up for each chore, and the shared-expense balances</li>
-              <li>Mark a chore done as you, and flag a chore that needs doing</li>
+              <li>See who lives here, who is away, and each chore with who did it and when</li>
+              <li>
+                See the shared expenses in full: who paid, who owes what, line items, payments
+                and recurring bills
+              </li>
+              <li>
+                As you: mark chores done, flag a chore, ask to swap a turn or answer a swap, go
+                away or come back, and leave a note on the wall display
+              </li>
+              <li>
+                As you: add an expense or itemized receipt, log a payment, and nudge a housemate
+                to settle up
+              </li>
             </ul>
+            <p className="t-body-sm text-ink-muted mt-2">
+              It is asked to show you what it will record before saving an expense or payment, and
+              Domestic gives it no tool to edit or delete anything already recorded.
+            </p>
           </div>
           <p className="t-body-sm text-ink-muted">
             Connecting gives it a sign-in for your account, not only those tools — approve

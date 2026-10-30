@@ -1,92 +1,25 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { formatCents, simplifyDebts } from '@/lib/money';
 import { bucketFor } from '@/lib/rotation';
-import type { ModuleKey } from '@/lib/modules';
-import type { Balance, Database } from '@/lib/types';
+import type { Balance } from '@/lib/types';
+import {
+  READ, WRITE, fail, guarded, matchChore, members, ok, scopeFor, type McpContext,
+} from './common';
+import { localDay } from './ledger';
+import { registerCoordinationTools } from './coordination-tools';
+import { registerLedgerTools } from './ledger-tools';
+import { registerMoneyTools } from './money-tools';
+import { registerPrompts } from './prompts';
+
+export { matchChore, type McpContext } from './common';
 
 /**
- * The tools an assistant gets. Every one runs through `ctx.supabase`, a client
- * carrying the signed-in person's own token, so RLS decides what is visible
- * and `complete_turn` / `flag_on_demand` see the real `auth.uid()`. Nothing
- * here may use the admin client.
+ * The first tools an assistant gets: the house, who is up, balances, recent
+ * activity, and the two chore actions. The expense ledger and chore history
+ * live in ledger-tools.ts. See common.ts for the rules every tool follows.
  */
-
-export type McpContext = {
-  supabase: SupabaseClient<Database>;
-  userId: string;
-  /** Web push to housemates; injected so this file stays free of server-only code. */
-  notify: (
-    profileIds: string[],
-    payload: { title: string; body: string; url?: string; tag?: string },
-  ) => Promise<unknown>;
-};
-
-const ok = (data: unknown): CallToolResult => ({
-  content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
-});
-
-const fail = (message: string): CallToolResult => ({
-  isError: true,
-  content: [{ type: 'text', text: message }],
-});
-
-type Scope = {
-  me: { id: string; full_name: string; is_admin: boolean };
-  household: { id: string; name: string; timezone: string };
-  modules: string[];
-};
-
-/**
- * Who is asking, which house they live in, and whether that house has let
- * assistants in. Checked on every call, so an admin switching the module off
- * takes effect at once rather than when a token happens to expire.
- */
-async function scopeFor(ctx: McpContext, needs?: ModuleKey): Promise<Scope | { error: string }> {
-  const { data: me } = await ctx.supabase
-    .from('profiles')
-    .select('id, household_id, full_name, is_admin')
-    .eq('id', ctx.userId)
-    .single<{ id: string; household_id: string | null; full_name: string; is_admin: boolean }>();
-  if (!me?.household_id) return { error: 'This account is not in a household yet.' };
-
-  const [{ data: household }, { data: modules }] = await Promise.all([
-    ctx.supabase
-      .from('households')
-      .select('id, name, timezone')
-      .eq('id', me.household_id)
-      .single<Scope['household']>(),
-    ctx.supabase.rpc('enabled_modules', { p_household: me.household_id }),
-  ]);
-
-  // Fails closed: unlike the app, a missing answer must not fall back to defaults.
-  const enabled = (modules as string[] | null) ?? [];
-  if (!household || !enabled.includes('mcp')) {
-    return {
-      error:
-        'AI assistant access is switched off for this household. An admin can turn it on under Settings → Household.',
-    };
-  }
-  if (needs && !enabled.includes(needs)) {
-    return { error: `This household does not use the ${needs} module.` };
-  }
-
-  return { me: { id: me.id, full_name: me.full_name, is_admin: me.is_admin }, household, modules: enabled };
-}
-
-type MemberRow = { id: string; full_name: string; initials: string };
-
-async function members(ctx: McpContext, householdId: string): Promise<MemberRow[]> {
-  const { data } = await ctx.supabase
-    .from('profiles')
-    .select('id, full_name, initials')
-    .eq('household_id', householdId)
-    .order('initials')
-    .returns<MemberRow[]>();
-  return data ?? [];
-}
 
 /* ------------------------------------------------------------------ reading */
 
@@ -108,6 +41,9 @@ export async function getHousehold(ctx: McpContext): Promise<CallToolResult> {
   return ok({
     household: scope.household.name,
     timezone: scope.household.timezone,
+    // The house's own calendar day, so "last month" and "this week" resolve
+    // against the right date rather than the assistant's guess.
+    today: localDay(new Date(), scope.household.timezone),
     you: { id: scope.me.id, name: scope.me.full_name, is_admin: scope.me.is_admin },
     modules: scope.modules.filter((m) => m !== 'mcp'),
     members: people.map((p) => ({
@@ -275,15 +211,6 @@ export async function completeChore(
   return ok({ ok: true, completed: turn.chore.name });
 }
 
-/** Match by id, exact name, or slug — so "dishes" or "recycling" is enough. */
-export function matchChore<T extends { id: string; name: string }>(chores: T[], wanted: string): T | undefined {
-  const needle = wanted.trim().toLowerCase();
-  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-  return chores.find(
-    (c) => c.id === wanted.trim() || c.name.toLowerCase() === needle || slug(c.name) === slug(needle),
-  );
-}
-
 export async function flagChore(
   ctx: McpContext,
   args: { chore: string },
@@ -324,26 +251,16 @@ export async function flagChore(
 
 /* ------------------------------------------------------------------- server */
 
-/** Runs a handler, turning anything unexpected into a tool error, never a 500. */
-async function guarded(run: () => Promise<CallToolResult>): Promise<CallToolResult> {
-  try {
-    return await run();
-  } catch (error) {
-    console.error('[mcp] tool failed', error instanceof Error ? error.message : error);
-    return fail('Something went wrong on the Domestic side. Try again in a moment.');
-  }
-}
-
-const READ = { readOnlyHint: true, openWorldHint: false } as const;
-const WRITE = { readOnlyHint: false, destructiveHint: false, openWorldHint: false } as const;
-
 export function buildServer(ctx: McpContext): McpServer {
   const server = new McpServer(
     { name: 'domestic', title: 'Domestic', version: '1.0.0' },
     {
       instructions:
-        'Domestic tracks chores and shared expenses for one household. Call get_household first to learn ' +
-        'who lives there. Money is integer cents. Only complete or flag a chore when the person asked you to.',
+        'Domestic tracks chores and shared expenses for one household. Call get_household first: it gives ' +
+        'who lives there and today\'s date in the house\'s timezone, which you need for ranges like "last ' +
+        'month". Money is integer cents. For spending questions use list_expenses — it already totals per ' +
+        'person and category, including what each person paid for the others — and get_expense for line ' +
+        'items, tax and tip. Only complete or flag a chore when the person asked you to.',
     },
   );
 
@@ -419,6 +336,11 @@ export function buildServer(ctx: McpContext): McpServer {
     },
     (args) => guarded(() => flagChore(ctx, args)),
   );
+
+  registerLedgerTools(server, ctx);
+  registerCoordinationTools(server, ctx);
+  registerMoneyTools(server, ctx);
+  registerPrompts(server, () => getHousehold(ctx));
 
   return server;
 }
