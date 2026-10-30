@@ -41,14 +41,16 @@ export function ConnectAssistant({ url }: { url: string }) {
         <div>
           <p className="t-title-md text-ink">Connector address</p>
           <p className="t-body-sm text-ink-muted mt-0.5">
-            Add this to an AI assistant and it can check who&apos;s up, see the balances, and mark
-            chores done as you. You sign in to Domestic and approve each assistant once.
+            Add this to an AI assistant and it can check who&apos;s up, go through the expenses
+            and balances, and act as you: mark chores done, swap turns, add expenses and
+            receipts, and log payments. You sign in to Domestic and approve each assistant once.
           </p>
         </div>
         <CodeLine text={url} />
         <p className="t-body-sm text-ink-muted">
-          Once connected, try: &ldquo;Who&apos;s up for the dishes?&rdquo; or &ldquo;What do I owe
-          the house?&rdquo;
+          Once connected, try: &ldquo;Who&apos;s up for the dishes?&rdquo;, &ldquo;What did I pay
+          for others last month?&rdquo; or share a receipt photo and say &ldquo;Split this
+          receipt.&rdquo;
         </p>
       </Card>
 

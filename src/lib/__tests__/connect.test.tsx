@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ConnectAssistant } from '../../app/(app)/settings/connect-assistant';
+import { ConnectedAssistants } from '../../app/(app)/settings/connected-assistants';
 import { mcpEndpoint } from '../mcp/connect';
 
 describe('mcpEndpoint', () => {
@@ -36,5 +37,30 @@ describe('ConnectAssistant', () => {
 
   it('says plainly that approving hands over a sign-in', () => {
     expect(html).toMatch(/sign-in for your account/);
+  });
+});
+
+describe('ConnectedAssistants', () => {
+  const assistants = [
+    { clientId: '11111111-1111-4111-8111-111111111111', name: 'Claude', connectedOn: 'Oct 29, 2026' },
+    { clientId: '22222222-2222-4222-8222-222222222222', name: 'Muse connector', connectedOn: 'Oct 30, 2026' },
+  ];
+
+  it('lists each approved assistant with when it connected and a way to cut it off', () => {
+    const html = renderToStaticMarkup(<ConnectedAssistants assistants={assistants} />);
+    expect(html).toContain('Claude');
+    expect(html).toContain('Muse connector');
+    expect(html).toContain('Connected Oct 29, 2026');
+    expect(html.match(/Disconnect/g)).toHaveLength(2);
+  });
+
+  it('shows nothing at all when no assistant is connected', () => {
+    expect(renderToStaticMarkup(<ConnectedAssistants assistants={[]} />)).toBe('');
+  });
+
+  it('describes the new abilities, so people know what they are approving', () => {
+    const html = renderToStaticMarkup(<ConnectAssistant url="https://app.example/api/mcp" />);
+    expect(html).toMatch(/add expenses/);
+    expect(html).toMatch(/receipt photo/);
   });
 });

@@ -69,11 +69,19 @@ history and must never be rewritten.
 `/api/mcp` authenticates a Supabase OAuth access token (`lib/mcp/auth.ts`) and
 queries through a client carrying that token — **never** `createAdminClient()`.
 RLS stays the boundary and `auth.uid()` is the real person, so reuse the app's
-RPCs (`complete_turn`, `flag_on_demand`) rather than reimplementing them as the
-HA bridge has to. Every tool call re-checks the `mcp` module and fails closed.
-It is stateless JSON over POST on purpose: no sessions, no SSE, so nothing bills
-while idle. Supabase has no narrower OAuth scopes, so a token is a full sign-in;
-expose capability through tools only, and keep write tools few.
+RPCs (`complete_turn`, `flag_on_demand`, `create_itemized_expense`) rather than
+reimplementing them as the HA bridge has to. Every tool call re-checks the `mcp`
+module and fails closed. It is stateless JSON over POST on purpose: no sessions,
+no SSE, so nothing bills while idle. Supabase has no narrower OAuth scopes, so a
+token is a full sign-in; expose capability through tools only.
+
+Write tools (anything that changes data) must be in `WRITE_TOOLS` in
+`lib/mcp/common.ts` — the rate limiter meters them tighter, and a test fails if a
+tool declares `readOnlyHint: false` without being listed. Tools that put money
+in the ledger preview first and only write with `confirm: true`; they check for a
+duplicate, take whole cents only, and have no edit or delete counterpart. Money
+math goes through `lib/mcp/splits.ts` and `money.ts`, never inline. Rate limits
+live in Postgres (`mcp_rate_check`, 0040) and fail open if it is missing.
 
 ## Modules
 

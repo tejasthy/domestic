@@ -7,7 +7,11 @@ import { PushToggle } from './push-toggle';
 import { AwayToggle } from './away-toggle';
 import { FeedbackForm } from './feedback-form';
 import { ConnectAssistant } from './connect-assistant';
+import { ConnectedAssistants, type ConnectedAssistant } from './connected-assistants';
 import { mcpEndpoint } from '@/lib/mcp/connect';
+import type { OAuthGrant } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/server';
+import { formatInTimeZone } from '@/lib/timezone';
 import { ReplayIntro } from '@/components/intro';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { THEME_COOKIE, parseThemeCookie } from '@/lib/theme';
@@ -31,6 +35,24 @@ export default async function SettingsPage() {
 
   // The configured origin when there is one (it is also the OAuth Site URL),
   // otherwise whatever host this request arrived on.
+  // Anyone who has connected an assistant can see and cut it off, even after an
+  // admin switches the module off — otherwise a connection would be stranded.
+  // Lists nothing if the project's OAuth server is not enabled.
+  let grants: OAuthGrant[] | null = null;
+  try {
+    grants = (await (await createClient()).auth.oauth.listGrants()).data;
+  } catch (error) {
+    // An optional list must never take the settings page down with it.
+    console.error('[settings] could not list connected assistants', error);
+  }
+  const assistants: ConnectedAssistant[] = (grants ?? []).map((g) => ({
+    clientId: g.client.id,
+    name: g.client.name,
+    connectedOn: formatInTimeZone(g.granted_at, household.timezone, {
+      month: 'short', day: 'numeric', year: 'numeric',
+    }),
+  }));
+
   let connectorUrl: string | null = null;
   if (modules.includes('mcp')) {
     const h = await headers();
@@ -131,10 +153,18 @@ export default async function SettingsPage() {
         </Card>
       </section>
 
-      {connectorUrl && (
-        <section>
+      {(connectorUrl || assistants.length > 0) && (
+        <section className="space-y-3">
           <SectionHeader title="AI assistants" />
-          <ConnectAssistant url={connectorUrl} />
+          {connectorUrl ? (
+            <ConnectAssistant url={connectorUrl} />
+          ) : (
+            <p className="t-body-sm text-ink-muted">
+              AI assistants are switched off for this house, so these connections can&apos;t do
+              anything until an admin turns them back on. You can still remove them.
+            </p>
+          )}
+          <ConnectedAssistants assistants={assistants} />
         </section>
       )}
 
